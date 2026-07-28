@@ -243,8 +243,7 @@ def owner_update_availability_rule(
 ):
     """Update the availability rule for a court."""
     _resolve_court(db=db, court_id=court_id, current_user=current_user)
-    rule = get_or_create_availability_rule(db=db, court_id=court_id)
-    return update_availability_rule(db=db, rule=rule, rule_in=rule_in)
+    return update_availability_rule(db=db, court_id=court_id, rule_in=rule_in)
 
 
 # ── Availability — Closures ───────────────────────────────────────────────────
@@ -283,7 +282,7 @@ def owner_update_closure(
 ):
     """Update an existing court closure."""
     _resolve_court(db=db, court_id=court_id, current_user=current_user)
-    return update_court_closure(db=db, court_id=court_id, closure_id=closure_id, closure_in=closure_in)
+    return update_court_closure(db=db, closure_id=closure_id, closure_in=closure_in)
 
 
 @router.delete("/courts/{court_id}/closures/{closure_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -295,7 +294,7 @@ def owner_delete_closure(
 ):
     """Delete a court closure."""
     _resolve_court(db=db, court_id=court_id, current_user=current_user)
-    delete_court_closure(db=db, court_id=court_id, closure_id=closure_id)
+    delete_court_closure(db=db, closure_id=closure_id)
     return None
 
 
@@ -335,10 +334,10 @@ def owner_update_pricing_rule(
 ):
     """Update a pricing rule."""
     _resolve_court(db=db, court_id=court_id, current_user=current_user)
-    rule = get_pricing_rule(db=db, rule_id=rule_id, court_id=court_id)
-    if not rule:
+    rule = get_pricing_rule(db=db, rule_id=rule_id)
+    if not rule or rule.court_id != court_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Pricing rule {rule_id} not found")
-    return update_pricing_rule(db=db, rule=rule, rule_in=rule_in)
+    return update_pricing_rule(db=db, rule_id=rule_id, rule_in=rule_in)
 
 
 @router.delete("/courts/{court_id}/pricing/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -350,10 +349,10 @@ def owner_delete_pricing_rule(
 ):
     """Delete a pricing rule."""
     _resolve_court(db=db, court_id=court_id, current_user=current_user)
-    rule = get_pricing_rule(db=db, rule_id=rule_id, court_id=court_id)
-    if not rule:
+    rule = get_pricing_rule(db=db, rule_id=rule_id)
+    if not rule or rule.court_id != court_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Pricing rule {rule_id} not found")
-    delete_pricing_rule(db=db, rule=rule)
+    delete_pricing_rule(db=db, rule_id=rule_id)
     return None
 
 
@@ -395,10 +394,10 @@ def owner_update_date_override(
 ):
     """Update a date-specific price override."""
     _resolve_court(db=db, court_id=court_id, current_user=current_user)
-    override = get_date_override(db=db, override_id=override_id, court_id=court_id)
-    if not override:
+    override = get_date_override(db=db, override_id=override_id)
+    if not override or override.court_id != court_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Date override {override_id} not found")
-    return update_date_override(db=db, override=override, override_in=override_in)
+    return update_date_override(db=db, override_id=override_id, override_in=override_in)
 
 
 @router.delete("/courts/{court_id}/pricing/overrides/{override_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -410,10 +409,10 @@ def owner_delete_date_override(
 ):
     """Delete a date-specific price override."""
     _resolve_court(db=db, court_id=court_id, current_user=current_user)
-    override = get_date_override(db=db, override_id=override_id, court_id=court_id)
-    if not override:
+    override = get_date_override(db=db, override_id=override_id)
+    if not override or override.court_id != court_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Date override {override_id} not found")
-    delete_date_override(db=db, override=override)
+    delete_date_override(db=db, override_id=override_id)
     return None
 
 

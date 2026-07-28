@@ -2,7 +2,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import check_court_owner_or_admin, get_current_user
 from app.db.session import get_db
 from app.models.court import Court
 from app.models.user import User, UserRole
@@ -32,24 +32,6 @@ from app.services.pricing_service import (
 
 router = APIRouter()
 
-
-def check_court_owner_or_admin(db: Session, court_id: int, current_user: User) -> Court:
-    court = db.query(Court).filter(Court.id == court_id).first()
-    if not court:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Court with id {court_id} not found",
-        )
-
-    is_owner = (court.owner_id == current_user.id)
-    is_admin = (current_user.role == UserRole.ADMIN or current_user.role == "admin" or current_user.is_admin)
-
-    if not (is_owner or is_admin):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators or court owners can perform this action.",
-        )
-    return court
 
 
 # --- Pricing Rules Endpoints ---

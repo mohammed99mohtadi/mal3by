@@ -232,11 +232,38 @@ def test_pending_payment_to_expired(client, db_session):
     b.hold_expires_at = datetime.now(timezone.utc) - timedelta(seconds=10)
     db_session.commit()
 
-    r_clean = client.post("/api/v1/bookings/cleanup-expired-holds")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    r_clean = client.post(
+        "/api/v1/bookings/cleanup-expired-holds",
+        headers=admin_headers,
+    )
+    assert r_clean.status_code == status.HTTP_200_OK
     assert r_clean.json()["expired_count"] >= 1
 
     r_get = client.get(f"/api/v1/bookings/{b_id}", headers=h_user)
     assert r_get.json()["status"] == BookingStatus.EXPIRED
+
+
+def test_cleanup_expired_holds_requires_admin(client, db_session):
+    _, user_token = register_user(
+        client,
+        db_session,
+        "cleanup_player@example.com",
+        UserRole.PLAYER,
+    )
+
+    response = client.post(
+        "/api/v1/bookings/cleanup-expired-holds",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_cleanup_expired_holds_requires_authentication(client):
+    response = client.post("/api/v1/bookings/cleanup-expired-holds")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 # 10. expired to confirmed fails

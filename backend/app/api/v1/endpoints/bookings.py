@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, require_admin
 from app.db.session import get_db
 from app.models.booking import BookingStatus
 from app.models.user import User, UserRole
@@ -100,8 +100,9 @@ def check_availability(
 @router.post("/cleanup-expired-holds")
 def trigger_cleanup_expired_holds(
     db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
 ):
-    """Trigger expiration cleanup for unpaid reservation holds."""
+    """Trigger expiration cleanup for unpaid reservation holds (Admin only)."""
     count = expire_outdated_holds(db)
     return {"expired_count": count}
 
