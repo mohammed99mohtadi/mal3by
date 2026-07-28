@@ -3,7 +3,6 @@ from decimal import Decimal
 import enum
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, JSON, Numeric, String
-
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -11,10 +10,13 @@ from app.db.base import Base
 
 class BookingStatus(str, enum.Enum):
     PENDING = "pending"
+    PENDING_PAYMENT = "pending_payment"
     CONFIRMED = "confirmed"
     CANCELLED = "cancelled"
+    EXPIRED = "expired"
     COMPLETED = "completed"
     REJECTED = "rejected"
+    REFUNDED = "refunded"
 
 
 class Booking(Base):
@@ -82,12 +84,43 @@ class Booking(Base):
         nullable=True,
     )
 
-
     status: Mapped[BookingStatus] = mapped_column(
-        String(20),
-        default=BookingStatus.PENDING,
+        String(30),
+        default=BookingStatus.PENDING_PAYMENT,
         nullable=False,
         index=True,
+    )
+
+    hold_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    expired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    refunded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    status_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     cancellation_reason: Mapped[str | None] = mapped_column(

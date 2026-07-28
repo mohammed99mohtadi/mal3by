@@ -9,14 +9,22 @@ from app.models.user import User, UserRole
 from app.schemas.booking import (
     BookingCancel,
     BookingCreate,
+    BookingHoldCreate,
+    BookingHoldStatusResponse,
+    BookingPaymentConfirm,
     BookingRead,
     BookingStatusUpdate,
 )
+from app.services.availability_service import expire_outdated_holds
 from app.services.booking_service import (
     cancel_booking,
+    cancel_user_hold,
     check_court_availability,
+    confirm_booking_payment,
     create_booking,
+    create_booking_hold,
     get_booking_by_id,
+    get_hold_status,
     list_user_bookings,
     update_booking_status,
 )
@@ -32,6 +40,16 @@ def create_new_booking(
 ):
     """Create a new booking for the authenticated user."""
     return create_booking(db=db, user_id=current_user.id, booking_in=booking_in)
+
+
+@router.post("/hold", response_model=BookingRead, status_code=status.HTTP_201_CREATED)
+def create_new_booking_hold(
+    booking_in: BookingHoldCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a temporary reservation hold for the authenticated user."""
+    return create_booking_hold(db=db, user_id=current_user.id, booking_in=booking_in)
 
 
 @router.get("/me", response_model=list[BookingRead])
@@ -79,6 +97,15 @@ def check_availability(
     }
 
 
+@router.post("/cleanup-expired-holds")
+def trigger_cleanup_expired_holds(
+    db: Session = Depends(get_db),
+):
+    """Trigger expiration cleanup for unpaid reservation holds."""
+    count = expire_outdated_holds(db)
+    return {"expired_count": count}
+
+
 @router.get("/{booking_id}", response_model=BookingRead)
 def get_booking(
     booking_id: int,
@@ -105,6 +132,39 @@ def get_booking(
         )
 
     return booking
+
+
+@router.get("/{booking_id}/hold-status", response_model=BookingHoldStatusResponse)
+def get_booking_hold_status_endpoint(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Retrieve hold status and remaining seconds for a booking."""
+    return get_hold_status(db=db, booking_id=booking_id, current_user=current_user)
+
+
+@router.post("/{booking_id}/cancel-hold", response_model=BookingRead)
+def cancel_booking_hold_endpoint(
+    booking_id: int,
+    cancel_in: BookingCancel | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Cancel a user's pending reservation hold."""
+    reason = cancel_in.cancellation_reason if cancel_in else None
+    return cancel_user_hold(db=db, booking_id=booking_id, current_user=current_user, reason=reason)
+
+
+@router.post("/{booking_id}/confirm-payment", response_model=BookingRead)
+def confirm_booking_payment_endpoint(
+    booking_id: int,
+    confirm_in: BookingPaymentConfirm | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Confirm successful payment for a reservation hold."""
+    return confirm_booking_payment(db=db, booking_id=booking_id, current_user=current_user)
 
 
 @router.post("/{booking_id}/cancel", response_model=BookingRead)

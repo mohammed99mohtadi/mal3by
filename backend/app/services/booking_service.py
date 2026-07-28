@@ -1,27 +1,43 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.booking import Booking, BookingStatus
 from app.models.court import Court
 from app.models.user import User, UserRole
-from app.schemas.booking import BookingCreate, BookingStatusUpdate
+from app.schemas.booking import BookingCreate, BookingHoldCreate, BookingHoldStatusResponse, BookingStatusUpdate
+from app.services.availability_service import expire_outdated_holds, make_utc_aware, validate_requested_booking_time
+
+from app.services.pricing_service import calculate_booking_price
 
 ALLOWED_TRANSITIONS = {
+    BookingStatus.PENDING_PAYMENT: {
+        BookingStatus.CONFIRMED,
+        BookingStatus.CANCELLED,
+        BookingStatus.EXPIRED,
+        BookingStatus.REJECTED,
+    },
+
     BookingStatus.PENDING: {
         BookingStatus.CONFIRMED,
-        BookingStatus.REJECTED,
         BookingStatus.CANCELLED,
+        BookingStatus.EXPIRED,
+        BookingStatus.REJECTED,
     },
     BookingStatus.CONFIRMED: {
         BookingStatus.COMPLETED,
         BookingStatus.CANCELLED,
+        BookingStatus.REFUNDED,
+    },
+    BookingStatus.COMPLETED: {
+        BookingStatus.REFUNDED,
     },
     BookingStatus.CANCELLED: set(),
-    BookingStatus.COMPLETED: set(),
+    BookingStatus.EXPIRED: set(),
     BookingStatus.REJECTED: set(),
+    BookingStatus.REFUNDED: set(),
 }
 
 
@@ -37,9 +53,14 @@ def get_booking_by_id(db: Session, booking_id: int) -> Booking | None:
     return db.execute(statement).scalar_one_or_none()
 
 
-def create_booking(db: Session, user_id: int, booking_in: BookingCreate) -> Booking:
-    # 1. Full availability & business rule validation via availability service
-    from app.services.availability_service import validate_requested_booking_time
+def create_booking_hold(
+    db: Session,
+    user_id: int,
+    booking_in: BookingHoldCreate,
+) -> Booking:
+    expire_outdated_holds(db)
+
+    # 1. Full availability & business rule validation
     validate_requested_booking_time(
         db=db,
         court_id=booking_in.court_id,
@@ -52,10 +73,14 @@ def create_booking(db: Session, user_id: int, booking_in: BookingCreate) -> Book
     court = db.execute(court_stmt).scalar_one_or_none()
 
     # 3. Calculate price via Pricing Engine
-    from app.services.pricing_service import calculate_booking_price
     breakdown = calculate_booking_price(db, court, booking_in.start_time, booking_in.end_time)
 
-    # 4. Save booking with complete pricing snapshot
+    # 4. Hold Expiration Timestamp
+    now_utc = datetime.now(timezone.utc)
+    hold_mins = booking_in.hold_minutes if booking_in.hold_minutes is not None else 10
+    hold_expires_at = now_utc + timedelta(minutes=hold_mins)
+
+    # 5. Save booking with PENDING_PAYMENT status and hold expiration
     db_booking = Booking(
         user_id=user_id,
         court_id=booking_in.court_id,
@@ -65,8 +90,10 @@ def create_booking(db: Session, user_id: int, booking_in: BookingCreate) -> Book
         base_price_per_hour=breakdown.base_price_per_hour,
         currency=breakdown.currency,
         pricing_breakdown=breakdown.model_dump(mode="json"),
-        pricing_calculated_at=datetime.now(timezone.utc),
-        status=BookingStatus.PENDING,
+        pricing_calculated_at=now_utc,
+        status=BookingStatus.PENDING_PAYMENT,
+        hold_expires_at=hold_expires_at,
+        status_updated_at=now_utc,
     )
 
     try:
@@ -77,10 +104,169 @@ def create_booking(db: Session, user_id: int, booking_in: BookingCreate) -> Book
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create booking",
+            detail="Failed to create booking hold",
         )
 
     return get_booking_by_id(db, db_booking.id)
+
+
+def create_booking(db: Session, user_id: int, booking_in: BookingCreate) -> Booking:
+    hold_in = BookingHoldCreate(
+        court_id=booking_in.court_id,
+        start_time=booking_in.start_time,
+        end_time=booking_in.end_time,
+        hold_minutes=10,
+    )
+    return create_booking_hold(db, user_id, hold_in)
+
+
+def get_hold_status(
+    db: Session,
+    booking_id: int,
+    current_user: User,
+) -> BookingHoldStatusResponse:
+    booking = get_booking_by_id(db, booking_id)
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Booking with id {booking_id} not found",
+        )
+
+    # Authorization check
+    is_owner = booking.user_id == current_user.id
+    is_court_owner = booking.court and booking.court.owner_id == current_user.id
+    is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
+
+    if not (is_owner or is_court_owner or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to view this hold status",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
+    hold_exp = make_utc_aware(booking.hold_expires_at)
+
+    # Auto expire if hold_expires_at passed
+    if cur_status in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING] and hold_exp:
+        if hold_exp <= now_utc:
+            booking.status = BookingStatus.EXPIRED
+            booking.expired_at = now_utc
+            booking.status_updated_at = now_utc
+            db.commit()
+            db.refresh(booking)
+            cur_status = BookingStatus.EXPIRED
+
+    is_expired = cur_status == BookingStatus.EXPIRED
+    secs_rem = 0
+    if cur_status in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING] and hold_exp:
+        if hold_exp > now_utc:
+            secs_rem = int((hold_exp - now_utc).total_seconds())
+        else:
+            is_expired = True
+
+    return BookingHoldStatusResponse(
+        booking_id=booking.id,
+        status=cur_status,
+        hold_expires_at=hold_exp,
+        is_expired=is_expired,
+        seconds_remaining=secs_rem,
+    )
+
+
+
+def cancel_user_hold(
+    db: Session,
+    booking_id: int,
+    current_user: User,
+    reason: str | None = None,
+) -> Booking:
+    booking = get_booking_by_id(db, booking_id)
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Booking with id {booking_id} not found",
+        )
+
+    is_owner = booking.user_id == current_user.id
+    is_court_owner = booking.court and booking.court.owner_id == current_user.id
+    is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
+
+    if not (is_owner or is_court_owner or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to cancel this hold",
+        )
+
+    cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
+    if cur_status not in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot cancel hold in {cur_status.value} status",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    booking.status = BookingStatus.CANCELLED
+    booking.cancelled_at = now_utc
+    booking.cancellation_reason = reason or "User cancelled hold"
+    booking.status_updated_at = now_utc
+
+    db.commit()
+    db.refresh(booking)
+    return get_booking_by_id(db, booking.id)
+
+
+def confirm_booking_payment(
+    db: Session,
+    booking_id: int,
+    current_user: User,
+) -> Booking:
+    booking = get_booking_by_id(db, booking_id)
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Booking with id {booking_id} not found",
+        )
+
+    is_owner = booking.user_id == current_user.id
+    is_court_owner = booking.court and booking.court.owner_id == current_user.id
+    is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
+
+    if not (is_owner or is_court_owner or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to confirm payment for this booking",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
+
+    if cur_status not in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot confirm payment for booking in {cur_status.value} status",
+        )
+
+    # Check if expired
+    hold_exp = make_utc_aware(booking.hold_expires_at)
+    if hold_exp and hold_exp <= now_utc:
+        booking.status = BookingStatus.EXPIRED
+        booking.expired_at = now_utc
+        booking.status_updated_at = now_utc
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reservation hold has expired and cannot be confirmed.",
+        )
+
+
+    booking.status = BookingStatus.CONFIRMED
+    booking.confirmed_at = now_utc
+    booking.status_updated_at = now_utc
+
+    db.commit()
+    db.refresh(booking)
+    return get_booking_by_id(db, booking.id)
 
 
 def check_court_availability(
@@ -89,6 +275,12 @@ def check_court_availability(
     start_time: datetime,
     end_time: datetime,
 ) -> bool:
+    from app.services.availability_service import (
+        check_booking_overlap_with_buffer,
+        get_or_create_availability_rule,
+        is_court_closed_by_exception,
+        is_court_open,
+    )
     court_stmt = select(Court).where(Court.id == court_id)
     court = db.execute(court_stmt).scalar_one_or_none()
     if not court:
@@ -103,22 +295,28 @@ def check_court_availability(
             detail="end_time must be after start_time",
         )
 
-    overlap_stmt = select(Booking).where(
-        Booking.court_id == court_id,
-        Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
-        Booking.start_time < end_time,
-        Booking.end_time > start_time,
-    )
-    return db.execute(overlap_stmt).first() is None
+    rule = get_or_create_availability_rule(db, court_id)
+    tz_str = rule.timezone
+
+    if not is_court_open(db, court_id, start_time, end_time, tz_str):
+        return False
+    if is_court_closed_by_exception(db, court_id, start_time, end_time):
+        return False
+    if check_booking_overlap_with_buffer(db, court_id, start_time, end_time, rule.buffer_minutes):
+        return False
+
+    return True
 
 
 def list_user_bookings(
+
     db: Session,
     user_id: int,
     status_filter: BookingStatus | None = None,
     skip: int = 0,
     limit: int = 20,
 ) -> list[Booking]:
+    expire_outdated_holds(db)
     query = (
         select(Booking)
         .options(joinedload(Booking.court).joinedload(Court.sport))
@@ -137,6 +335,7 @@ def list_court_bookings(
     skip: int = 0,
     limit: int = 20,
 ) -> list[Booking]:
+    expire_outdated_holds(db)
     query = (
         select(Booking)
         .options(joinedload(Booking.court).joinedload(Court.sport))
@@ -154,7 +353,6 @@ def cancel_booking(
     current_user: User,
     reason: str | None = None,
 ) -> Booking:
-    # Authorization: Owner of booking, court owner, or admin
     is_booking_owner = booking.user_id == current_user.id
     is_court_owner = booking.court and booking.court.owner_id == current_user.id
     is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
@@ -165,17 +363,19 @@ def cancel_booking(
             detail="You do not have permission to cancel this booking",
         )
 
-    # State check: Cannot cancel if already terminal
     cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
-    if cur_status in [BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.REJECTED]:
+    valid_next = ALLOWED_TRANSITIONS.get(cur_status, set())
+    if BookingStatus.CANCELLED not in valid_next and cur_status not in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING, BookingStatus.CONFIRMED]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot cancel a booking that is already cancelled, completed, or rejected.",
+            detail=f"Cannot cancel booking in {cur_status.value} status.",
         )
 
+    now_utc = datetime.now(timezone.utc)
     booking.status = BookingStatus.CANCELLED
     booking.cancellation_reason = reason
-    booking.cancelled_at = datetime.now(timezone.utc)
+    booking.cancelled_at = now_utc
+    booking.status_updated_at = now_utc
     db.commit()
     db.refresh(booking)
     return get_booking_by_id(db, booking.id)
@@ -189,7 +389,6 @@ def update_booking_status(
 ) -> Booking:
     new_status = status_update.status
 
-    # Permission check: Admin or court owner
     is_court_owner = booking.court and booking.court.owner_id == current_user.id
     is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
 
@@ -199,11 +398,9 @@ def update_booking_status(
             detail="Only administrators or court owners can update booking status.",
         )
 
-    # Convert status strings/enums to BookingStatus enum
     cur_status_enum = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
     new_status_enum = BookingStatus(new_status) if isinstance(new_status, str) else new_status
 
-    # Allowed status transition check
     valid_next_statuses = ALLOWED_TRANSITIONS.get(cur_status_enum, set())
     if new_status_enum not in valid_next_statuses:
         raise HTTPException(
@@ -211,9 +408,22 @@ def update_booking_status(
             detail=f"Invalid status transition from {cur_status_enum.value} to {new_status_enum.value}",
         )
 
+    now_utc = datetime.now(timezone.utc)
     booking.status = new_status_enum
-    if new_status_enum == BookingStatus.CANCELLED and not booking.cancelled_at:
-        booking.cancelled_at = datetime.now(timezone.utc)
+    booking.status_updated_at = now_utc
+
+    if new_status_enum == BookingStatus.CONFIRMED and not booking.confirmed_at:
+        booking.confirmed_at = now_utc
+    elif new_status_enum == BookingStatus.CANCELLED and not booking.cancelled_at:
+        booking.cancelled_at = now_utc
+        if status_update.cancellation_reason:
+            booking.cancellation_reason = status_update.cancellation_reason
+    elif new_status_enum == BookingStatus.EXPIRED and not booking.expired_at:
+        booking.expired_at = now_utc
+    elif new_status_enum == BookingStatus.COMPLETED and not booking.completed_at:
+        booking.completed_at = now_utc
+    elif new_status_enum == BookingStatus.REFUNDED and not booking.refunded_at:
+        booking.refunded_at = now_utc
 
     db.commit()
     db.refresh(booking)

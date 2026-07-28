@@ -2,7 +2,8 @@ from datetime import date, datetime, time as dtime, timedelta, timezone
 from decimal import Decimal
 import zoneinfo
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
+
 from sqlalchemy.orm import Session
 
 from app.models.availability import (
@@ -341,6 +342,29 @@ def is_court_closed_by_exception(
     return False
 
 
+def expire_outdated_holds(db: Session) -> int:
+    """Finds and expires unpaid holds whose hold_expires_at has passed."""
+    now_utc = datetime.now(timezone.utc)
+    stmt = select(Booking).where(
+        Booking.status.in_([BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]),
+        Booking.hold_expires_at.is_not(None),
+        Booking.hold_expires_at <= now_utc,
+    )
+    expired_bookings = list(db.execute(stmt).scalars().all())
+
+    count = 0
+    for b in expired_bookings:
+        b.status = BookingStatus.EXPIRED
+        b.expired_at = now_utc
+        b.status_updated_at = now_utc
+        count += 1
+
+    if count > 0:
+        db.flush()
+    return count
+
+
+
 def check_booking_overlap_with_buffer(
     db: Session,
     court_id: int,
@@ -348,18 +372,30 @@ def check_booking_overlap_with_buffer(
     end_time: datetime,
     buffer_minutes: int,
 ) -> bool:
+    expire_outdated_holds(db)
     start_time = make_utc_aware(start_time)
     end_time = make_utc_aware(end_time)
+    now_utc = datetime.now(timezone.utc)
 
-    # Query active bookings (pending or confirmed)
+    # Fetch active candidate bookings (CONFIRMED, PENDING_PAYMENT, PENDING)
     stmt = select(Booking).where(
         Booking.court_id == court_id,
-        Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
+        Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]),
     )
-    bookings = list(db.execute(stmt).scalars().all())
+    raw_bookings = list(db.execute(stmt).scalars().all())
+
+    active_bookings = []
+    for b in raw_bookings:
+        b_status = BookingStatus(b.status) if isinstance(b.status, str) else b.status
+        if b_status == BookingStatus.CONFIRMED:
+            active_bookings.append(b)
+        elif b_status in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]:
+            b_hold = make_utc_aware(b.hold_expires_at)
+            if b_hold is None or b_hold > now_utc:
+                active_bookings.append(b)
 
     buffer_delta = timedelta(minutes=buffer_minutes)
-    for b in bookings:
+    for b in active_bookings:
         b_start = make_utc_aware(b.start_time)
         b_end = make_utc_aware(b.end_time)
 
@@ -369,6 +405,8 @@ def check_booking_overlap_with_buffer(
         if blocked_start < end_time and blocked_end > start_time:
             return True
     return False
+
+
 
 
 def validate_requested_booking_time(

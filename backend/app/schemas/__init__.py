@@ -15,10 +15,14 @@ from app.schemas.availability import (
 from app.schemas.booking import (
     BookingCancel,
     BookingCreate,
+    BookingHoldCreate,
+    BookingHoldStatusResponse,
     BookingListItem,
+    BookingPaymentConfirm,
     BookingRead,
     BookingStatusUpdate,
 )
+
 from app.schemas.court import CourtCreate, CourtResponse, CourtUpdate
 from app.schemas.pricing import (
     AppliedPricingRule,
@@ -51,9 +55,13 @@ __all__ = [
     "CourtResponse",
     "CourtUpdate",
     "BookingCreate",
+    "BookingHoldCreate",
+    "BookingHoldStatusResponse",
+    "BookingPaymentConfirm",
     "BookingCancel",
     "BookingStatusUpdate",
     "BookingRead",
+
     "BookingListItem",
     "CourtAvailabilityRuleCreate",
     "CourtAvailabilityRuleUpdate",

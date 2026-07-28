@@ -39,12 +39,29 @@ class BookingCreate(BaseModel):
             raise ValueError("Booking duration must not exceed 6 hours")
 
 
+class BookingHoldCreate(BookingCreate):
+    hold_minutes: int | None = Field(default=10, ge=1, le=60)
+
+
 class BookingCancel(BaseModel):
     cancellation_reason: str | None = Field(default=None, max_length=255)
 
 
 class BookingStatusUpdate(BaseModel):
     status: BookingStatus
+    cancellation_reason: str | None = Field(default=None, max_length=255)
+
+
+class BookingPaymentConfirm(BaseModel):
+    payment_reference: str | None = Field(default=None, max_length=100)
+
+
+class BookingHoldStatusResponse(BaseModel):
+    booking_id: int
+    status: BookingStatus
+    hold_expires_at: datetime | None = None
+    is_expired: bool
+    seconds_remaining: int
 
 
 class BookingRead(BaseModel):
@@ -59,6 +76,13 @@ class BookingRead(BaseModel):
     pricing_breakdown: dict | None = None
     pricing_calculated_at: datetime | None = None
     status: BookingStatus
+
+    hold_expires_at: datetime | None = None
+    confirmed_at: datetime | None = None
+    expired_at: datetime | None = None
+    completed_at: datetime | None = None
+    refunded_at: datetime | None = None
+    status_updated_at: datetime | None = None
 
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None

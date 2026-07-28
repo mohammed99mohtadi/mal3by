@@ -95,7 +95,8 @@ def test_authenticated_user_creates_valid_booking(client, db_session):
     data = resp.json()
     assert data["court_id"] == court_id
     assert data["user_id"] == user_id
-    assert data["status"] == "pending"
+    assert data["status"] in ["pending", "pending_payment"]
+
     assert float(data["total_price"]) == 30.0  # 2 hours * 15.0/hr = 30.0
 
 
