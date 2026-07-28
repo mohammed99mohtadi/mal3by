@@ -38,49 +38,24 @@ def get_booking_by_id(db: Session, booking_id: int) -> Booking | None:
 
 
 def create_booking(db: Session, user_id: int, booking_in: BookingCreate) -> Booking:
-    # 1. Validate duration & end > start
-    try:
-        booking_in.validate_duration_and_times()
-    except ValueError as err:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(err),
-        )
+    # 1. Full availability & business rule validation via availability service
+    from app.services.availability_service import validate_requested_booking_time
+    validate_requested_booking_time(
+        db=db,
+        court_id=booking_in.court_id,
+        start_time=booking_in.start_time,
+        end_time=booking_in.end_time,
+    )
 
-    # 2. Check court exists
+    # 2. Get court for price calculation
     court_stmt = select(Court).where(Court.id == booking_in.court_id)
     court = db.execute(court_stmt).scalar_one_or_none()
-    if not court:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Court with id {booking_in.court_id} not found",
-        )
 
-    # 3. Check court active
-    if not court.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Court is inactive and not available for booking",
-        )
-
-    # 4. Check for overlapping active bookings (pending or confirmed)
-    overlap_stmt = select(Booking).where(
-        Booking.court_id == booking_in.court_id,
-        Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
-        Booking.start_time < booking_in.end_time,
-        Booking.end_time > booking_in.start_time,
-    )
-    existing_overlap = db.execute(overlap_stmt).first()
-    if existing_overlap:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The requested time slot overlaps with an existing booking.",
-        )
-
-    # 5. Calculate total_price on server (quantized Decimal)
+    # 3. Calculate total_price on server (quantized Decimal)
     duration_seconds = Decimal(str((booking_in.end_time - booking_in.start_time).total_seconds()))
     duration_hours = duration_seconds / Decimal("3600")
     total_price = (duration_hours * court.price_per_hour).quantize(Decimal("0.001"))
+
 
     # 6. Save booking
     db_booking = Booking(

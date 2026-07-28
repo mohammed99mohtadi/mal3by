@@ -6,6 +6,10 @@ from app.models.booking import BookingStatus
 from app.models.user import User, UserRole
 
 
+def get_aligned_now() -> datetime:
+    return datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+
 def register_and_get_token(client, db_session, email: str, role: UserRole = UserRole.PLAYER) -> tuple[int, str]:
     reg_resp = client.post(
         "/api/v1/auth/register",
@@ -60,7 +64,7 @@ def create_test_court(client, admin_token: str, price_per_hour=10.0, is_active=T
 
 # 1. Unauthenticated user cannot create booking
 def test_unauthenticated_user_cannot_create_booking(client):
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     payload = {
         "court_id": 1,
         "start_time": (now + timedelta(days=1)).isoformat(),
@@ -76,7 +80,7 @@ def test_authenticated_user_creates_valid_booking(client, db_session):
     user_id, user_token = register_and_get_token(client, db_session, "user_b2@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token, price_per_hour=15.0)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     start_time = now + timedelta(days=2)
     end_time = start_time + timedelta(hours=2)
 
@@ -102,7 +106,7 @@ def test_client_cannot_override_user_id_or_total_price(client, db_session):
     other_user_id, _ = register_and_get_token(client, db_session, "other_b3@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token, price_per_hour=20.0)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     start_time = now + timedelta(days=3)
     end_time = start_time + timedelta(hours=1)
 
@@ -124,7 +128,7 @@ def test_client_cannot_override_user_id_or_total_price(client, db_session):
 # 5. Court not found returns 404
 def test_court_not_found_returns_404(client, db_session):
     _, user_token = register_and_get_token(client, db_session, "user_b5@example.com", UserRole.PLAYER)
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     headers = {"Authorization": f"Bearer {user_token}"}
     payload = {
         "court_id": 99999,
@@ -141,7 +145,7 @@ def test_inactive_court_cannot_be_booked(client, db_session):
     _, user_token = register_and_get_token(client, db_session, "user_b6@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token, is_active=False)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     headers = {"Authorization": f"Bearer {user_token}"}
     payload = {
         "court_id": court_id,
@@ -155,11 +159,14 @@ def test_inactive_court_cannot_be_booked(client, db_session):
 
 # 7. Booking in the past is rejected
 def test_booking_in_past_is_rejected(client, db_session):
+    _, admin_token = register_and_get_token(client, db_session, "admin_b7@example.com", UserRole.ADMIN)
     _, user_token = register_and_get_token(client, db_session, "user_b7@example.com", UserRole.PLAYER)
-    now = datetime.now(timezone.utc)
+    court_id = create_test_court(client, admin_token)
+
+    now = get_aligned_now()
     headers = {"Authorization": f"Bearer {user_token}"}
     payload = {
-        "court_id": 1,
+        "court_id": court_id,
         "start_time": (now - timedelta(hours=2)).isoformat(),
         "end_time": (now - timedelta(hours=1)).isoformat(),
     }
@@ -169,11 +176,14 @@ def test_booking_in_past_is_rejected(client, db_session):
 
 # 8. End time before start time is rejected
 def test_end_time_before_start_time_rejected(client, db_session):
+    _, admin_token = register_and_get_token(client, db_session, "admin_b8@example.com", UserRole.ADMIN)
     _, user_token = register_and_get_token(client, db_session, "user_b8@example.com", UserRole.PLAYER)
-    now = datetime.now(timezone.utc)
+    court_id = create_test_court(client, admin_token)
+
+    now = get_aligned_now()
     headers = {"Authorization": f"Bearer {user_token}"}
     payload = {
-        "court_id": 1,
+        "court_id": court_id,
         "start_time": (now + timedelta(days=1, hours=2)).isoformat(),
         "end_time": (now + timedelta(days=1, hours=1)).isoformat(),
     }
@@ -183,11 +193,14 @@ def test_end_time_before_start_time_rejected(client, db_session):
 
 # 9. Duration shorter than 30 minutes is rejected
 def test_duration_shorter_than_30_minutes_rejected(client, db_session):
+    _, admin_token = register_and_get_token(client, db_session, "admin_b9@example.com", UserRole.ADMIN)
     _, user_token = register_and_get_token(client, db_session, "user_b9@example.com", UserRole.PLAYER)
-    now = datetime.now(timezone.utc)
+    court_id = create_test_court(client, admin_token)
+
+    now = get_aligned_now()
     headers = {"Authorization": f"Bearer {user_token}"}
     payload = {
-        "court_id": 1,
+        "court_id": court_id,
         "start_time": (now + timedelta(days=1)).isoformat(),
         "end_time": (now + timedelta(days=1, minutes=15)).isoformat(),
     }
@@ -197,16 +210,20 @@ def test_duration_shorter_than_30_minutes_rejected(client, db_session):
 
 # 10. Duration longer than 6 hours is rejected
 def test_duration_longer_than_6_hours_rejected(client, db_session):
+    _, admin_token = register_and_get_token(client, db_session, "admin_b10@example.com", UserRole.ADMIN)
     _, user_token = register_and_get_token(client, db_session, "user_b10@example.com", UserRole.PLAYER)
-    now = datetime.now(timezone.utc)
+    court_id = create_test_court(client, admin_token)
+
+    now = get_aligned_now()
     headers = {"Authorization": f"Bearer {user_token}"}
     payload = {
-        "court_id": 1,
+        "court_id": court_id,
         "start_time": (now + timedelta(days=1)).isoformat(),
         "end_time": (now + timedelta(days=1, hours=7)).isoformat(),
     }
     resp = client.post("/api/v1/bookings", json=payload, headers=headers)
     assert resp.status_code in [status.HTTP_400_BAD_REQUEST, status.HTTP_422_UNPROCESSABLE_ENTITY]
+
 
 
 # 11. Total price calculated correctly
@@ -215,7 +232,7 @@ def test_total_price_calculation_fractional_hours(client, db_session):
     _, user_token = register_and_get_token(client, db_session, "user_b11@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token, price_per_hour=12.0)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     start_time = now + timedelta(days=4)
     end_time = start_time + timedelta(hours=1, minutes=30)  # 1.5 hours * 12.0 = 18.0
 
@@ -237,7 +254,7 @@ def test_overlapping_pending_booking_rejected_with_409(client, db_session):
     _, u2_token = register_and_get_token(client, db_session, "user2_b12@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     start1 = now + timedelta(days=5, hours=10)
     end1 = start1 + timedelta(hours=2)  # 10:00 to 12:00
 
@@ -261,12 +278,13 @@ def test_overlapping_confirmed_booking_rejected_with_409(client, db_session):
     _, u2_token = register_and_get_token(client, db_session, "user2_b13@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     start1 = now + timedelta(days=6, hours=14)
     end1 = start1 + timedelta(hours=1)
 
     h1 = {"Authorization": f"Bearer {u1_token}"}
     r1 = client.post("/api/v1/bookings", json={"court_id": court_id, "start_time": start1.isoformat(), "end_time": end1.isoformat()}, headers=h1)
+    assert r1.status_code == status.HTTP_201_CREATED
     b_id = r1.json()["id"]
 
     # Admin confirms booking 1
@@ -286,13 +304,14 @@ def test_cancelled_booking_does_not_block_slot(client, db_session):
     _, u2_token = register_and_get_token(client, db_session, "user2_b14@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     start1 = now + timedelta(days=7, hours=16)
     end1 = start1 + timedelta(hours=1)
 
     # User 1 books and then cancels
     h1 = {"Authorization": f"Bearer {u1_token}"}
     r1 = client.post("/api/v1/bookings", json={"court_id": court_id, "start_time": start1.isoformat(), "end_time": end1.isoformat()}, headers=h1)
+    assert r1.status_code == status.HTTP_201_CREATED
     b_id = r1.json()["id"]
     client.post(f"/api/v1/bookings/{b_id}/cancel", headers=h1)
 
@@ -309,7 +328,7 @@ def test_adjacent_bookings_allowed(client, db_session):
     _, u2_token = register_and_get_token(client, db_session, "user2_b15@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     start1 = now + timedelta(days=8, hours=10)
     end1 = start1 + timedelta(hours=1)
 
@@ -331,7 +350,7 @@ def test_user_can_list_own_bookings(client, db_session):
     _, u_token = register_and_get_token(client, db_session, "user_b16@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     h = {"Authorization": f"Bearer {u_token}"}
     client.post("/api/v1/bookings", json={"court_id": court_id, "start_time": (now + timedelta(days=9)).isoformat(), "end_time": (now + timedelta(days=9, hours=1)).isoformat()}, headers=h)
 
@@ -347,9 +366,10 @@ def test_user_cannot_view_another_users_booking(client, db_session):
     _, u2_token = register_and_get_token(client, db_session, "user2_b17@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     h1 = {"Authorization": f"Bearer {u1_token}"}
     r1 = client.post("/api/v1/bookings", json={"court_id": court_id, "start_time": (now + timedelta(days=10)).isoformat(), "end_time": (now + timedelta(days=10, hours=1)).isoformat()}, headers=h1)
+    assert r1.status_code == status.HTTP_201_CREATED
     b_id = r1.json()["id"]
 
     h2 = {"Authorization": f"Bearer {u2_token}"}
@@ -364,9 +384,10 @@ def test_cancellation_rules_and_permissions(client, db_session):
     _, u2_token = register_and_get_token(client, db_session, "user2_b18@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     h1 = {"Authorization": f"Bearer {u1_token}"}
     r1 = client.post("/api/v1/bookings", json={"court_id": court_id, "start_time": (now + timedelta(days=11)).isoformat(), "end_time": (now + timedelta(days=11, hours=1)).isoformat()}, headers=h1)
+    assert r1.status_code == status.HTTP_201_CREATED
     b_id = r1.json()["id"]
 
     # 19. User 2 cannot cancel User 1's booking -> 403
@@ -390,9 +411,10 @@ def test_status_update_permissions_and_transitions(client, db_session):
     _, u_token = register_and_get_token(client, db_session, "user_b21@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     h = {"Authorization": f"Bearer {u_token}"}
     r1 = client.post("/api/v1/bookings", json={"court_id": court_id, "start_time": (now + timedelta(days=12)).isoformat(), "end_time": (now + timedelta(days=12, hours=1)).isoformat()}, headers=h)
+    assert r1.status_code == status.HTTP_201_CREATED
     b_id = r1.json()["id"]
 
     # 21. Normal user cannot update status -> 403
@@ -416,7 +438,7 @@ def test_availability_endpoint(client, db_session):
     _, u_token = register_and_get_token(client, db_session, "user_b24@example.com", UserRole.PLAYER)
     court_id = create_test_court(client, admin_token)
 
-    now = datetime.now(timezone.utc)
+    now = get_aligned_now()
     start_time = now + timedelta(days=13, hours=10)
     end_time = start_time + timedelta(hours=2)
 
@@ -430,10 +452,10 @@ def test_availability_endpoint(client, db_session):
 
     # User books the slot
     h = {"Authorization": f"Bearer {u_token}"}
-    client.post("/api/v1/bookings", json={"court_id": court_id, "start_time": start_time.isoformat(), "end_time": end_time.isoformat()}, headers=h)
+    r_b = client.post("/api/v1/bookings", json={"court_id": court_id, "start_time": start_time.isoformat(), "end_time": end_time.isoformat()}, headers=h)
+    assert r_b.status_code == status.HTTP_201_CREATED
 
     # 25. Occupied slot returns false
     r_avail2 = client.get(f"/api/v1/bookings/availability/{court_id}?start_time={start_str}&end_time={end_str}")
     assert r_avail2.status_code == status.HTTP_200_OK
     assert r_avail2.json()["available"] is False
-

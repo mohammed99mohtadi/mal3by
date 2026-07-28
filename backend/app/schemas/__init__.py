@@ -1,4 +1,17 @@
 from app.schemas.auth import LoginRequest, Token, TokenData
+from app.schemas.availability import (
+    AvailableSlot,
+    CourtAvailabilityResponse,
+    CourtAvailabilityRuleCreate,
+    CourtAvailabilityRuleRead,
+    CourtAvailabilityRuleUpdate,
+    CourtClosureCreate,
+    CourtClosureRead,
+    CourtClosureUpdate,
+    CourtWorkingHoursCreate,
+    CourtWorkingHoursRead,
+    CourtWorkingHoursUpdate,
+)
 from app.schemas.booking import (
     BookingCancel,
     BookingCreate,
@@ -29,4 +42,15 @@ __all__ = [
     "BookingStatusUpdate",
     "BookingRead",
     "BookingListItem",
+    "CourtAvailabilityRuleCreate",
+    "CourtAvailabilityRuleUpdate",
+    "CourtAvailabilityRuleRead",
+    "CourtWorkingHoursCreate",
+    "CourtWorkingHoursUpdate",
+    "CourtWorkingHoursRead",
+    "CourtClosureCreate",
+    "CourtClosureUpdate",
+    "CourtClosureRead",
+    "AvailableSlot",
+    "CourtAvailabilityResponse",
 ]

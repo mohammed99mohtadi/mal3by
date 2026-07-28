@@ -1,6 +1,23 @@
+from app.models.availability import (
+    CourtAvailabilityRule,
+    CourtClosure,
+    CourtClosureType,
+    CourtWorkingHours,
+)
 from app.models.booking import Booking, BookingStatus
 from app.models.court import Court
 from app.models.sport import Sport
 from app.models.user import User, UserRole
 
-__all__ = ["User", "UserRole", "Sport", "Court", "Booking", "BookingStatus"]
+__all__ = [
+    "User",
+    "UserRole",
+    "Sport",
+    "Court",
+    "Booking",
+    "BookingStatus",
+    "CourtAvailabilityRule",
+    "CourtWorkingHours",
+    "CourtClosure",
+    "CourtClosureType",
+]

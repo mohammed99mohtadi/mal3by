@@ -36,6 +36,11 @@ To view current migration revision:
 alembic current
 ```
 
+To view migration heads:
+```bash
+alembic heads
+```
+
 To create a new migration after model changes:
 ```bash
 alembic revision --autogenerate -m "description_of_changes"
@@ -61,6 +66,76 @@ Run the full pytest suite (uses isolated in-memory database):
 pytest -q
 ```
 
+---
+
+## Court Availability Engine (Milestone 4, Phase 1)
+
+### Core Concepts & Default Behavior
+- **Default Backward Compatibility**: Existing courts without configured working hours are treated as open **24 hours / 7 days**.
+- **Default Rule Settings**: Minimum booking 30 minutes, maximum booking 360 minutes (6 hours), interval 30 minutes, buffer 0 minutes, maximum advance booking 30 days, minimum advance booking 0 minutes, timezone `Asia/Kuwait`.
+
+### Working Hours & Overnight Operating Rules
+- Weekday conventions: `0=Monday`, `1=Tuesday`, `2=Wednesday`, `3=Thursday`, `4=Friday`, `5=Saturday`, `6=Sunday`.
+- **Overnight Working Hours**: Supported when `opens_at >= closes_at` (e.g. Friday `18:00:00` to `02:00:00`). A booking on Friday evening or Saturday before 02:00 is allowed.
+
+### Exception Closures
+- Closure types: `maintenance`, `holiday`, `private_event`, `emergency`, `manual`.
+- Bookings overlapping a closure are rejected (`HTTP 400 Bad Request`).
+
+### Buffer Time & Alignment
+- **Buffer Expansion**: When `buffer_minutes` is configured (e.g. 15 mins), an active booking `[10:00, 11:00]` blocks `[09:45, 11:15]`.
+- Overlapping booking attempts return `HTTP 409 Conflict`.
+- Bookings starting at exactly `11:15` (when interval aligns) are permitted.
+
+### Timezone Normalization
+- Storage: All database datetimes are stored in UTC.
+- Evaluation: Working hours and slot generation evaluate local court date using the configured court IANA timezone (`Asia/Kuwait`).
+
+### Management API Endpoints (`/api/v1/courts/{court_id}/availability-settings`)
+- `GET /rules`: Get court availability rules.
+- `PUT /rules`: Create/update rules (Admin or Court Owner).
+- `GET /working-hours`: Get working hours.
+- `PUT /working-hours/{weekday}`: Upsert working hours for a weekday (Admin or Court Owner).
+- `DELETE /working-hours/{weekday}`: Delete working hours for a weekday (Admin or Court Owner).
+- `GET /closures`: Get court closures (optional `start_range` & `end_range` filters).
+- `POST /closures`: Create a closure (Admin or Court Owner, 201 Created).
+- `PATCH /closures/{closure_id}`: Update a closure (Admin or Court Owner).
+- `DELETE /closures/{closure_id}`: Delete a closure (Admin or Court Owner, 204 No Content).
+
+### Public Slot Generation Endpoint
+- `GET /api/v1/courts/{court_id}/available-slots`
+  - Query parameters: `date` (YYYY-MM-DD), `duration_minutes` (int), optional `start_time`, `end_time`.
+  - Returns calculated slots with price and availability status.
+
+### Example Requests
+
+#### Configure Working Hours (Friday Overnight)
+`PUT /api/v1/courts/1/availability-settings/working-hours/4`
+```json
+{
+  "weekday": 4,
+  "opens_at": "18:00:00",
+  "closes_at": "02:00:00",
+  "is_closed": false
+}
+```
+
+#### Create Maintenance Closure
+`POST /api/v1/courts/1/availability-settings/closures`
+```json
+{
+  "start_time": "2026-08-10T08:00:00Z",
+  "end_time": "2026-08-10T14:00:00Z",
+  "reason": "Court Resurfacing",
+  "closure_type": "maintenance"
+}
+```
+
+#### Query Public Available Slots
+`GET /api/v1/courts/1/available-slots?date=2026-08-10&duration_minutes=60`
+
+---
+
 ## Booking System (Milestone 3)
 
 ### Booking Lifecycle Statuses
@@ -74,53 +149,3 @@ pytest -q
 - `pending` -> `confirmed`, `rejected`, `cancelled`
 - `confirmed` -> `completed`, `cancelled`
 - Terminal states (`cancelled`, `completed`, `rejected`) cannot transition to any other status.
-
-### Booking Rules & Overlap Logic
-1. **Server-Side Pricing**: `total_price` is strictly computed on server (`Decimal(hours) * court.price_per_hour`). Client price parameters are ignored.
-2. **Timezone Enforcement**: All booking start and end datetimes must be timezone-aware UTC datetimes.
-3. **Duration Constraints**: Booking duration must be at least 30 minutes and no longer than 6 hours.
-4. **Future Start**: Bookings cannot start in the past.
-5. **Slot Overlap Prevention**: Active bookings (`pending` or `confirmed`) for the same court cannot overlap. Overlap is detected when:
-   `existing.start_time < requested.end_time AND existing.end_time > requested.start_time`.
-   Conflicting requests return `HTTP 409 Conflict`.
-6. **Adjacent Bookings**: Bookings starting exactly when a prior booking ends are permitted.
-
-### Example Booking Requests
-
-#### Create Booking
-`POST /api/v1/bookings`
-```json
-{
-  "court_id": 1,
-  "start_time": "2026-08-20T10:00:00Z",
-  "end_time": "2026-08-20T12:00:00Z"
-}
-```
-
-#### Check Court Availability
-`GET /api/v1/bookings/availability/1?start_time=2026-08-20T10:00:00Z&end_time=2026-08-20T12:00:00Z`
-
-#### User Cancel Booking
-`POST /api/v1/bookings/1/cancel`
-```json
-{
-  "cancellation_reason": "Weather conflict"
-}
-```
-
-#### Admin/Owner Update Status
-`PATCH /api/v1/bookings/1/status`
-```json
-{
-  "status": "confirmed"
-}
-```
-
-## API Endpoints Overview
-
-- **Auth**: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`
-- **Users**: `GET /api/v1/users/me`
-- **Sports**: `POST /api/v1/sports` (Admin), `GET /api/v1/sports`, `GET /api/v1/sports/{id}`
-- **Courts**: `POST /api/v1/courts` (Owner/Admin), `GET /api/v1/courts`, `GET /api/v1/courts/{id}`, `PATCH /api/v1/courts/{id}`, `DELETE /api/v1/courts/{id}`
-- **Admin**: `PATCH /api/v1/admin/users/{user_id}/role` (Admin only)
-- **Bookings**: `POST /api/v1/bookings`, `GET /api/v1/bookings/me`, `GET /api/v1/bookings/availability/{court_id}`, `GET /api/v1/bookings/{id}`, `POST /api/v1/bookings/{id}/cancel`, `PATCH /api/v1/bookings/{id}/status`

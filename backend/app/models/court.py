@@ -122,4 +122,8 @@ class Court(Base):
     owner = relationship("User", back_populates="courts")
     sport = relationship("Sport", back_populates="courts")
     bookings = relationship("Booking", back_populates="court", cascade="all, delete-orphan")
+    availability_rule = relationship("CourtAvailabilityRule", uselist=False, back_populates="court", cascade="all, delete-orphan")
+    working_hours = relationship("CourtWorkingHours", back_populates="court", cascade="all, delete-orphan")
+    closures = relationship("CourtClosure", back_populates="court", cascade="all, delete-orphan")
+
 
