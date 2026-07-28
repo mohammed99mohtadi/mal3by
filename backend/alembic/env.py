@@ -3,14 +3,14 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
-import app.models  # noqa: F401
+import app.models  # noqa: F401 - Loads all models (User, Sport, Court, Booking)
 from app.core.config import settings
 from app.db.base import Base
 
 config = context.config
 
-# Set default database URL from settings if not explicitly overridden
-if not config.get_main_option("sqlalchemy.url") or config.get_main_option("sqlalchemy.url") == "sqlite:///./mal3ab.db":
+url = config.get_main_option("sqlalchemy.url")
+if not url or "driver://user:pass" in url or url == "sqlite:///./mal3ab.db":
     config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
@@ -21,9 +21,9 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = config.get_main_option("sqlalchemy.url")
+    url_str = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=url_str,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

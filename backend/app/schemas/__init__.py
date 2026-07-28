@@ -1,4 +1,11 @@
 from app.schemas.auth import LoginRequest, Token, TokenData
+from app.schemas.booking import (
+    BookingCancel,
+    BookingCreate,
+    BookingListItem,
+    BookingRead,
+    BookingStatusUpdate,
+)
 from app.schemas.court import CourtCreate, CourtResponse, CourtUpdate
 from app.schemas.sport import SportCreate, SportResponse, SportUpdate
 from app.schemas.user import UserCreate, UserResponse, UserRoleUpdate, UserUpdate
@@ -17,4 +24,9 @@ __all__ = [
     "CourtCreate",
     "CourtResponse",
     "CourtUpdate",
+    "BookingCreate",
+    "BookingCancel",
+    "BookingStatusUpdate",
+    "BookingRead",
+    "BookingListItem",
 ]

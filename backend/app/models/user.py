@@ -71,3 +71,4 @@ class User(Base):
 
     # Relationships
     courts = relationship("Court", back_populates="owner", cascade="all, delete-orphan")
+    bookings = relationship("Booking", back_populates="user", cascade="all, delete-orphan")

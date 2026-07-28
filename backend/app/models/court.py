@@ -121,3 +121,5 @@ class Court(Base):
     # Relationships
     owner = relationship("User", back_populates="courts")
     sport = relationship("Sport", back_populates="courts")
+    bookings = relationship("Booking", back_populates="court", cascade="all, delete-orphan")
+
