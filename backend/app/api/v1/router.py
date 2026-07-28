@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import admin, auth, availability, bookings, courts, pricing, sports, users
+from app.api.v1.endpoints import admin, auth, availability, bookings, courts, owner, pricing, sports, users
 
 api_router = APIRouter()
 
@@ -12,4 +12,5 @@ api_router.include_router(availability.router, prefix="/courts", tags=["availabi
 api_router.include_router(pricing.router, prefix="/courts", tags=["pricing"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])
+api_router.include_router(owner.router, prefix="/owner", tags=["owner-management"])
 
