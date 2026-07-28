@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import enum
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, JSON, Numeric, String
+
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -59,6 +60,28 @@ class Booking(Base):
         Numeric(10, 3),
         nullable=False,
     )
+
+    base_price_per_hour: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 3),
+        nullable=True,
+    )
+
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        default="KWD",
+        nullable=False,
+    )
+
+    pricing_breakdown: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    pricing_calculated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
 
     status: Mapped[BookingStatus] = mapped_column(
         String(20),

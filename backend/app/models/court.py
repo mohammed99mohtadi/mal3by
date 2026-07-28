@@ -125,5 +125,8 @@ class Court(Base):
     availability_rule = relationship("CourtAvailabilityRule", uselist=False, back_populates="court", cascade="all, delete-orphan")
     working_hours = relationship("CourtWorkingHours", back_populates="court", cascade="all, delete-orphan")
     closures = relationship("CourtClosure", back_populates="court", cascade="all, delete-orphan")
+    pricing_rules = relationship("CourtPricingRule", back_populates="court", cascade="all, delete-orphan")
+    date_price_overrides = relationship("CourtDatePriceOverride", back_populates="court", cascade="all, delete-orphan")
+
 
 

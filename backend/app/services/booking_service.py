@@ -51,21 +51,24 @@ def create_booking(db: Session, user_id: int, booking_in: BookingCreate) -> Book
     court_stmt = select(Court).where(Court.id == booking_in.court_id)
     court = db.execute(court_stmt).scalar_one_or_none()
 
-    # 3. Calculate total_price on server (quantized Decimal)
-    duration_seconds = Decimal(str((booking_in.end_time - booking_in.start_time).total_seconds()))
-    duration_hours = duration_seconds / Decimal("3600")
-    total_price = (duration_hours * court.price_per_hour).quantize(Decimal("0.001"))
+    # 3. Calculate price via Pricing Engine
+    from app.services.pricing_service import calculate_booking_price
+    breakdown = calculate_booking_price(db, court, booking_in.start_time, booking_in.end_time)
 
-
-    # 6. Save booking
+    # 4. Save booking with complete pricing snapshot
     db_booking = Booking(
         user_id=user_id,
         court_id=booking_in.court_id,
         start_time=booking_in.start_time,
         end_time=booking_in.end_time,
-        total_price=total_price,
+        total_price=breakdown.total,
+        base_price_per_hour=breakdown.base_price_per_hour,
+        currency=breakdown.currency,
+        pricing_breakdown=breakdown.model_dump(mode="json"),
+        pricing_calculated_at=datetime.now(timezone.utc),
         status=BookingStatus.PENDING,
     )
+
     try:
         db.add(db_booking)
         db.commit()

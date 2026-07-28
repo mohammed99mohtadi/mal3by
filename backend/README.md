@@ -68,6 +68,93 @@ pytest -q
 
 ---
 
+## Court Pricing Engine (Milestone 5, Phase 1)
+
+### Overview & Base Pricing
+- **Base Price Fallback**: When a court has no active pricing rules or overrides, the fallback rate is `Court.price_per_hour`.
+- **Proportional Calculation**: Bookings with fractional hours (e.g., 90 minutes = 1.5 hours) are calculated proportionally (`hourly_rate * duration_minutes / 60`).
+- **KWD Precision**: All monetary totals and hourly rates are quantized to 3 decimal places using `ROUND_HALF_UP` (`Decimal("0.001")`).
+
+### Rule Types
+1. `fixed_hourly_price`: Replaces the current hourly rate during the matching interval (e.g. 15.000 KWD).
+2. `percentage_adjustment`: Adjusts the hourly rate by a percentage (e.g. `+20.0` for +20% surge, `-10.0` for 10% discount).
+3. `fixed_hourly_adjustment`: Adds or subtracts a fixed amount per hour (e.g. `+2.500` KWD or `-1.000` KWD).
+- **Floor at Zero**: A calculated hourly rate can never become negative (floored at `0.000 KWD`).
+
+### Rule Priority & Application Order
+- Matching rules are sorted deterministically by:
+  1. `priority` (ascending)
+  2. `created_at` (ascending)
+  3. `id` (ascending)
+- **Precedence**: Date overrides use default `priority = 100` while recurring rules use default `priority = 0`. Lower numerical priority values are applied first (e.g. base price -> recurring fixed price at priority 10 -> holiday percentage increase at priority 100).
+
+### Overnight Pricing & Multi-Segment Calculations
+- **Overnight Time Ranges**: Supported for time ranges where `starts_at >= ends_at` (e.g., Thursday `22:00` to `02:00`). Thursday's rule applies continuously through Friday 02:00.
+- **Interval Splitting**: Bookings spanning multiple rate intervals (e.g. 17:30 to 19:30 crossing an 18:00 peak boundary) or crossing midnight are split into sub-segments and calculated independently.
+
+### Historical Price Snapshots
+- When a booking is created, the backend calculates and stores:
+  - `total_price` (Authoritative historical total)
+  - `base_price_per_hour` (Court base price at calculation time)
+  - `currency` (`KWD`)
+  - `pricing_breakdown` (Detailed JSON breakdown of all sub-segments and applied rules)
+  - `pricing_calculated_at` (UTC timestamp)
+- **Immutable History**: Subsequent changes to court base prices or pricing rules do not affect historical booking records. Client-supplied total prices are ignored.
+
+### Price Quote Endpoint (`POST /api/v1/courts/{court_id}/price-quote`)
+- **Public & Informational**: Computes server-calculated price breakdown and informational availability status (`available: true/false`).
+- **Important Note**: *A price quote is informational and does NOT reserve the court slot.*
+
+### Pricing Management Endpoints (`/api/v1/courts/{court_id}/pricing`)
+- `GET /rules`: List recurring pricing rules.
+- `POST /rules`: Create recurring pricing rule (Admin or Court Owner, 201 Created).
+- `GET /rules/{rule_id}`: Read single rule.
+- `PATCH /rules/{rule_id}`: Update recurring pricing rule (Admin or Court Owner).
+- `DELETE /rules/{rule_id}`: Delete recurring pricing rule (Admin or Court Owner, 204 No Content).
+- `GET /date-overrides`: List date-specific overrides (optional `start_date` & `end_date` filters).
+- `POST /date-overrides`: Create date override (Admin or Court Owner, 201 Created).
+- `GET /date-overrides/{override_id}`: Read single override.
+- `PATCH /date-overrides/{override_id}`: Update date override (Admin or Court Owner).
+- `DELETE /date-overrides/{override_id}`: Delete date override (Admin or Court Owner, 204 No Content).
+
+### Example Requests
+
+#### Create Evening Peak Recurring Rule
+`POST /api/v1/courts/1/pricing/rules`
+```json
+{
+  "name": "Evening Peak",
+  "rule_type": "fixed_hourly_price",
+  "starts_at": "18:00:00",
+  "ends_at": "22:00:00",
+  "value": 15.0,
+  "priority": 10
+}
+```
+
+#### Create National Day Holiday Override
+`POST /api/v1/courts/1/pricing/date-overrides`
+```json
+{
+  "name": "National Day Holiday",
+  "local_date": "2026-08-15",
+  "override_type": "percentage_adjustment",
+  "value": 25.0,
+  "priority": 100
+}
+```
+
+#### Request Price Quote
+`POST /api/v1/courts/1/price-quote`
+```json
+{
+  "start_time": "2026-08-15T17:30:00Z",
+  "end_time": "2026-08-15T19:30:00Z"
+}
+```
+
+---
+
 ## Court Availability Engine (Milestone 4, Phase 1)
 
 ### Core Concepts & Default Behavior
@@ -90,49 +177,6 @@ pytest -q
 ### Timezone Normalization
 - Storage: All database datetimes are stored in UTC.
 - Evaluation: Working hours and slot generation evaluate local court date using the configured court IANA timezone (`Asia/Kuwait`).
-
-### Management API Endpoints (`/api/v1/courts/{court_id}/availability-settings`)
-- `GET /rules`: Get court availability rules.
-- `PUT /rules`: Create/update rules (Admin or Court Owner).
-- `GET /working-hours`: Get working hours.
-- `PUT /working-hours/{weekday}`: Upsert working hours for a weekday (Admin or Court Owner).
-- `DELETE /working-hours/{weekday}`: Delete working hours for a weekday (Admin or Court Owner).
-- `GET /closures`: Get court closures (optional `start_range` & `end_range` filters).
-- `POST /closures`: Create a closure (Admin or Court Owner, 201 Created).
-- `PATCH /closures/{closure_id}`: Update a closure (Admin or Court Owner).
-- `DELETE /closures/{closure_id}`: Delete a closure (Admin or Court Owner, 204 No Content).
-
-### Public Slot Generation Endpoint
-- `GET /api/v1/courts/{court_id}/available-slots`
-  - Query parameters: `date` (YYYY-MM-DD), `duration_minutes` (int), optional `start_time`, `end_time`.
-  - Returns calculated slots with price and availability status.
-
-### Example Requests
-
-#### Configure Working Hours (Friday Overnight)
-`PUT /api/v1/courts/1/availability-settings/working-hours/4`
-```json
-{
-  "weekday": 4,
-  "opens_at": "18:00:00",
-  "closes_at": "02:00:00",
-  "is_closed": false
-}
-```
-
-#### Create Maintenance Closure
-`POST /api/v1/courts/1/availability-settings/closures`
-```json
-{
-  "start_time": "2026-08-10T08:00:00Z",
-  "end_time": "2026-08-10T14:00:00Z",
-  "reason": "Court Resurfacing",
-  "closure_type": "maintenance"
-}
-```
-
-#### Query Public Available Slots
-`GET /api/v1/courts/1/available-slots?date=2026-08-10&duration_minutes=60`
 
 ---
 

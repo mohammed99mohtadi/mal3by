@@ -298,6 +298,11 @@ def is_court_open(
     end_time: datetime,
     tz_str: str,
 ) -> bool:
+    working_hours_list = list_working_hours(db, court_id)
+    if not working_hours_list:
+        # Default strategy: 24/7 open if no working hours configured
+        return True
+
     tz = get_zone_info(tz_str)
     start_time = make_utc_aware(start_time)
     end_time = make_utc_aware(end_time)
@@ -306,8 +311,7 @@ def is_court_open(
     local_date = local_start.date()
 
     intervals = get_working_intervals_for_local_date(db, court_id, local_date, tz_str)
-    if not intervals:
-        return False
+    intervals += get_working_intervals_for_local_date(db, court_id, local_date + timedelta(days=1), tz_str)
 
     # Check if requested [start_time, end_time] is completely within any working interval
     for int_start, int_end in intervals:
@@ -570,9 +574,11 @@ def generate_available_slots(
 
             is_available = (not is_closed) and (not has_overlap)
 
-            # Calculate price
-            dur_hours = Decimal(str(duration_minutes)) / Decimal("60")
-            price = (dur_hours * court.price_per_hour).quantize(Decimal("0.001"))
+            # Calculate price via Pricing Engine
+            from app.services.pricing_service import calculate_booking_price
+            price_breakdown = calculate_booking_price(db, court, curr_start, curr_end)
+            price = price_breakdown.total
+
 
             slots.append(
                 AvailableSlot(

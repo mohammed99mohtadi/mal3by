@@ -54,7 +54,12 @@ class BookingRead(BaseModel):
     start_time: datetime
     end_time: datetime
     total_price: Decimal
+    base_price_per_hour: Decimal | None = None
+    currency: str = "KWD"
+    pricing_breakdown: dict | None = None
+    pricing_calculated_at: datetime | None = None
     status: BookingStatus
+
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
     created_at: datetime

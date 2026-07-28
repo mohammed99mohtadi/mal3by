@@ -247,6 +247,8 @@ def test_total_price_calculation_fractional_hours(client, db_session):
     assert float(resp.json()["total_price"]) == 18.0
 
 
+
+
 # 12. Overlapping pending booking is rejected with 409
 def test_overlapping_pending_booking_rejected_with_409(client, db_session):
     _, admin_token = register_and_get_token(client, db_session, "admin_b12@example.com", UserRole.ADMIN)

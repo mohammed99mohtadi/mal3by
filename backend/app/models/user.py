@@ -72,3 +72,5 @@ class User(Base):
     # Relationships
     courts = relationship("Court", back_populates="owner", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="user", cascade="all, delete-orphan")
+    created_pricing_rules = relationship("CourtPricingRule", back_populates="created_by")
+    created_date_overrides = relationship("CourtDatePriceOverride", back_populates="created_by")
