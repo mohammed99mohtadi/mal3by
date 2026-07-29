@@ -128,5 +128,5 @@ class Court(Base):
     pricing_rules = relationship("CourtPricingRule", back_populates="court", cascade="all, delete-orphan")
     date_price_overrides = relationship("CourtDatePriceOverride", back_populates="court", cascade="all, delete-orphan")
     matches = relationship("Match", back_populates="court")
-
+    reviews = relationship("CourtReview", back_populates="court")
 

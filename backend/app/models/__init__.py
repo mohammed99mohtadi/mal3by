@@ -26,3 +26,4 @@ __all__ = [
     "PricingRuleType",
 ]
 from app.models.match import Match, MatchParticipant  # noqa: F401
+from app.models.review import CourtReview, CourtReviewResponse  # noqa: F401

@@ -76,3 +76,4 @@ class User(Base):
     created_date_overrides = relationship("CourtDatePriceOverride", back_populates="created_by")
     created_matches = relationship("Match", back_populates="creator", foreign_keys="Match.creator_id")
     match_participations = relationship("MatchParticipant", back_populates="user")
+    court_reviews = relationship("CourtReview", back_populates="reviewer", foreign_keys="CourtReview.reviewer_id")

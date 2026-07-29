@@ -102,6 +102,16 @@ Run match tests with:
 pytest tests/test_matches.py -q
 ```
 
+## Court Reviews (Milestone 9)
+
+Players may create one verified 1-5 star review for their own booking only after it is `completed` and its end time has passed. Reviews are tied permanently to the booking, so soft-deleting a review does not allow another review for that booking.
+
+Hidden reviews remain editable by their reviewer but cannot be republished by that reviewer. Removed or soft-deleted reviews cannot be edited.
+
+Published, non-deleted reviews appear at `GET /api/v1/courts/{court_id}/reviews`; `GET /api/v1/courts/{court_id}/rating-summary` calculates the published rating distribution and average. Court owners may post one official response. Admins can hide, publish, or remove reviews. Hidden and removed reviews are excluded from public listings and aggregates.
+
+Review APIs: `POST /api/v1/reviews`, `GET /api/v1/reviews/me`, `GET/PATCH/DELETE /api/v1/reviews/{review_id}`, response actions, and `/api/v1/admin/reviews/{review_id}/hide|publish|remove`.
+
 ---
 
 ## Court Pricing Engine (Milestone 5, Phase 1)
