@@ -1,0 +1,6 @@
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { api } from "@/lib/api";
+import { bookingLabel } from "@/lib/booking";
+export default async function Bookings({params}:{params:Promise<{locale:string}>}){const {locale}=await params;const token=(await cookies()).get("mal3by_session")?.value;if(!token)redirect(`/${locale}/login?returnTo=/${locale}/bookings`);let bookings;try{bookings=await api.bookings(token)}catch{redirect(`/${locale}/login?returnTo=/${locale}/bookings`)}return <section className="mx-auto max-w-5xl p-6"><h1 className="text-3xl font-black">My Bookings</h1>{bookings.length===0?<p className="mt-6">No bookings yet.</p>:<div className="mt-6 grid gap-3">{bookings.map(booking=><Link key={booking.id} href={`/${locale}/bookings/${booking.id}`} className="rounded-md border bg-white p-4 focus-ring"><div className="flex justify-between gap-3"><strong>{booking.court?.[locale==="ar"?"name_ar":"name_en"]??`Court #${booking.court_id}`}</strong><span>{bookingLabel[booking.status]}</span></div><p className="mt-2 text-sm">{new Date(booking.start_time).toLocaleString(locale)} · {booking.total_price} {booking.currency}</p></Link>)}</div>}</section>}

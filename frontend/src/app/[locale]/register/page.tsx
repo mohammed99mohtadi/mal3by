@@ -1,0 +1,1 @@
+import { AuthForm } from "@/components/auth-form";export default async function Register({params}:{params:Promise<{locale:string}>}){const {locale}=await params;return <section className="p-8"><h1 className="text-center text-3xl font-black">Create account</h1><AuthForm locale={locale} mode="register"/></section>}
