@@ -66,6 +66,42 @@ Run the full pytest suite (uses isolated in-memory database):
 pytest -q
 ```
 
+## Community Matches (Milestone 8)
+
+Authenticated users can create a match from one of their own confirmed court bookings. A match copies the court sport and booking time, and a booking can be linked to only one match. The creator is recorded as an approved participant atomically with match creation.
+
+### Lifecycle and participation
+
+- Matches start as `open`, become `full` when approved participants reach capacity, and can be `cancelled` or `completed`.
+- Join policies are `open` (immediate approval) and `approval_required` (pending creator/admin approval).
+- Participant states are `pending`, `approved`, `rejected`, and `left`. Leaving preserves the participant record.
+- Creators and admins can approve, reject, remove participants, update allowed pre-start fields, cancel, complete after the booking time ends, and regenerate private invite codes.
+- Court owners do not gain match-management access solely through court ownership.
+
+### Visibility and invite codes
+
+- Public matches appear at `GET /api/v1/matches`.
+- Private matches are hidden from unrelated users and require creator/admin/participant access, or a valid invite code where permitted.
+- Private matches receive a server-generated unpredictable invite code. Codes are returned only on creation and regeneration, never by normal match retrieval or listing.
+- `POST /api/v1/matches/join-by-code` joins a private match without exposing its code in public schemas.
+
+### Booking integration
+
+A match requires an active confirmed booking at creation. A later cancelled, expired, or otherwise non-confirmed linked booking blocks new joins. Cancelling a match does not cancel its booking; booking cancellation remains a separate booking operation. Production deployments should add periodic synchronization/notifications for booking changes and database locking appropriate to their database engine; SQLite cannot provide strong row-level locking for simultaneous final-slot joins.
+
+### Match API overview
+
+- `POST /api/v1/matches`, `GET /api/v1/matches`, `GET /api/v1/matches/{match_id}`
+- `POST /api/v1/matches/{match_id}/join`, `POST /api/v1/matches/join-by-code`, `POST /api/v1/matches/{match_id}/leave`
+- `PATCH /api/v1/matches/{match_id}`, `POST /api/v1/matches/{match_id}/cancel`, `POST /api/v1/matches/{match_id}/complete`
+- `GET /api/v1/matches/me/created`, `GET /api/v1/matches/me/joined`
+- Creator/admin participant management: `GET /api/v1/matches/{match_id}/participants` and approve, reject, remove actions.
+
+Run match tests with:
+```bash
+pytest tests/test_matches.py -q
+```
+
 ---
 
 ## Court Pricing Engine (Milestone 5, Phase 1)

@@ -74,3 +74,5 @@ class User(Base):
     bookings = relationship("Booking", back_populates="user", cascade="all, delete-orphan")
     created_pricing_rules = relationship("CourtPricingRule", back_populates="created_by")
     created_date_overrides = relationship("CourtDatePriceOverride", back_populates="created_by")
+    created_matches = relationship("Match", back_populates="creator", foreign_keys="Match.creator_id")
+    match_participations = relationship("MatchParticipant", back_populates="user")

@@ -25,3 +25,4 @@ __all__ = [
     "CourtDatePriceOverride",
     "PricingRuleType",
 ]
+from app.models.match import Match, MatchParticipant  # noqa: F401

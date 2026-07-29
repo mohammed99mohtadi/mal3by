@@ -149,3 +149,4 @@ class Booking(Base):
     # Relationships
     user = relationship("User", back_populates="bookings")
     court = relationship("Court", back_populates="bookings")
+    match = relationship("Match", back_populates="booking", uselist=False)
