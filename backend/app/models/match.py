@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -29,6 +29,14 @@ class ParticipantStatus(str, enum.Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     LEFT = "left"
+
+
+class MatchJoinRequestStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+    EXPIRED = "expired"
 
 
 class SkillLevel(str, enum.Enum):
@@ -74,6 +82,7 @@ class Match(Base):
     booking = relationship("Booking", back_populates="match")
     participants = relationship("MatchParticipant", back_populates="match")
     position_requirements = relationship("MatchPositionRequirement", back_populates="match")
+    join_requests = relationship("MatchJoinRequest", back_populates="match")
 
 
 class MatchPositionRequirement(Base):
@@ -111,3 +120,47 @@ class MatchParticipant(Base):
 
     match = relationship("Match", back_populates="participants")
     user = relationship("User", back_populates="match_participations")
+
+
+class MatchJoinRequest(Base):
+    __tablename__ = "match_join_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'withdrawn', 'expired')",
+            name="ck_match_join_requests_status",
+        ),
+        CheckConstraint(
+            "requested_position_code IS NULL OR length(trim(requested_position_code)) > 0",
+            name="ck_match_join_requests_position_code",
+        ),
+        Index("ix_match_join_requests_match_status", "match_id", "status"),
+        Index("ix_match_join_requests_user_status", "user_id", "status"),
+        Index(
+            "uq_match_join_requests_pending_match_user",
+            "match_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="RESTRICT"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    status: Mapped[MatchJoinRequestStatus] = mapped_column(
+        String(20), nullable=False, default=MatchJoinRequestStatus.PENDING, index=True
+    )
+    requested_position_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    match = relationship("Match", back_populates="join_requests")
+    requester = relationship("User", foreign_keys=[user_id])
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
