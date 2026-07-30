@@ -1,2 +1,39 @@
-import Link from "next/link";import { api } from "@/lib/api";import { copy,type Locale } from "@/lib/copy";import type { Court } from "@/lib/types";
-export default async function Home({params}:{params:Promise<{locale:string}>}){const {locale}=await params;const l=(locale==="en"?"en":"ar") as Locale;const t=copy[l];let courts:Court[]=[];try{courts=(await api.courts()).slice(0,3)}catch{}return <><section className="overflow-hidden border-b border-[var(--border)] bg-[radial-gradient(circle_at_75%_20%,#1d4d30,transparent_35%),linear-gradient(120deg,#080b0e,#0d2b1e)]"><div className="page-wrap py-20 sm:py-28"><p className="eyebrow">KUWAIT SPORTS BOOKING</p><h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight sm:text-6xl">{t.hero}</h1><p className="mt-5 max-w-xl text-[var(--muted)]">Find your court, choose a real available slot, and keep your booking details in one place.</p><div className="mt-8 flex flex-wrap gap-3"><Link className="brand-button px-5 py-3 focus-ring" href={`/${l}/courts`}>{t.discover}</Link><Link className="rounded-lg border border-[var(--border)] px-5 py-3 font-bold text-white focus-ring" href={`/${l}/bookings`}>My Bookings</Link></div></div></section><section className="page-wrap"><div className="flex items-end justify-between gap-4"><div><p className="eyebrow">DISCOVER</p><h2 className="mt-2 text-2xl font-black">{t.featured}</h2></div><Link className="text-sm font-bold text-[var(--primary)] focus-ring" href={`/${l}/courts`}>View all</Link></div><div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{courts.map(c=><Link key={c.id} href={`/${l}/courts/${c.id}`} className="surface p-5 transition hover:-translate-y-1 focus-ring"><p className="text-xs font-bold text-[var(--primary)]">{c.sport?.[l==="ar"?"name_ar":"name_en"]}</p><h3 className="mt-3 text-lg font-bold">{l==="ar"?c.name_ar:c.name_en}</h3><p className="mt-2 text-sm muted">{c.area}</p><p className="mt-5 font-bold">{c.price_per_hour} {t.price}</p></Link>)}</div></section><section className="border-y border-[var(--border)] bg-[var(--surface)]"><div className="page-wrap grid gap-6 md:grid-cols-3">{[["01","Discover courts"],["02","Choose a slot"],["03","Confirm your booking"]].map(([number,label])=><div key={number} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-5"><p className="text-sm font-black text-[var(--primary)]">{number}</p><p className="mt-4 font-bold">{label}</p></div>)}</div></section></>}
+import { cookies } from "next/headers";
+import { api } from "@/lib/api";
+import { type Locale } from "@/lib/copy";
+import type { Court } from "@/lib/types";
+import { HeroSection } from "@/components/home/hero-section";
+import { FeaturedCourtsSection } from "@/components/home/featured-courts-section";
+import { HowItWorksSection } from "@/components/home/how-it-works-section";
+import { WhyMal3bySection } from "@/components/home/why-mal3by-section";
+import { FinalCtaSection } from "@/components/home/final-cta-section";
+
+export default async function Home({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  const l = (locale === "en" ? "en" : "ar") as Locale;
+
+  const cookieStore = await cookies();
+  const isLoggedIn = Boolean(cookieStore.get("mal3by_session"));
+
+  let courts: Court[] = [];
+  let courtsError = false;
+  try {
+    courts = (await api.courts()).slice(0, 3);
+  } catch {
+    courtsError = true;
+  }
+
+  return (
+    <>
+      <HeroSection locale={l} isLoggedIn={isLoggedIn} />
+      <FeaturedCourtsSection locale={l} courts={courts} error={courtsError} />
+      <HowItWorksSection locale={l} />
+      <WhyMal3bySection locale={l} />
+      <FinalCtaSection locale={l} />
+    </>
+  );
+}
