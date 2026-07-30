@@ -4,4 +4,9 @@ export type RatingSummary = { average_rating:string; total_reviews:number; verif
 export type User = { id:number; full_name:string; email:string; phone_number?:string|null; role:string; is_active:boolean };
 export type BookingStatus="pending"|"pending_payment"|"confirmed"|"cancelled"|"expired"|"completed"|"rejected"|"refunded";
 export type Booking={id:number;court_id:number;start_time:string;end_time:string;total_price:string;currency:string;status:BookingStatus;hold_expires_at?:string|null;cancellation_reason?:string|null;cancelled_at?:string|null;created_at:string;court?:Court|null};
+export type MatchStatus="open"|"full"|"cancelled"|"completed";
+export type ParticipantStatus="pending"|"approved"|"rejected"|"left";
+export type JoinRequestStatus="pending"|"approved"|"rejected"|"withdrawn";
+export type Match={id:number;title:string;description?:string|null;sport_type:string;visibility:"public"|"private";join_policy:"open"|"approval_required";status:MatchStatus;skill_level:"beginner"|"intermediate"|"advanced"|"all_levels";min_players:number;max_players:number;start_time:string;end_time:string;created_at:string;creator:{id:number;full_name:string};court:{id:number;name_en:string;name_ar:string;area:string};approved_participant_count:number;available_spots:number;has_joined:boolean;current_user_participant_status:ParticipantStatus|null;can_manage:boolean;booking_id:number;pending_participant_count?:number|null};
+export type MatchJoinRequest={id:number;match_id:number;user_id:number;status:JoinRequestStatus;requested_position_code?:string|null;reviewed_by_user_id?:number|null;reviewed_at?:string|null;created_at:string;updated_at:string;requester?:{id:number;full_name:string}|null};
 export class ApiError extends Error { constructor(public status:number, message:string){super(message)} }
