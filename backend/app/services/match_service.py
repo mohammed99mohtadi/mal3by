@@ -535,3 +535,82 @@ def serialize_match(db: Session, match: Match, current_user: User, detail: bool 
     if include_invite:
         data["invite_code"] = match.invite_code
     return data
+
+
+def create_join_request(
+    db: Session,
+    match_id: int,
+    current_user: User,
+    position_code: str | None = None,
+) -> MatchJoinRequest:
+    match = get_match(db, match_id, lock=True)
+    if not match:
+        raise _not_found()
+    if _enum(match.join_policy, MatchJoinPolicy) != MatchJoinPolicy.APPROVAL_REQUIRED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Match does not require approval to join",
+        )
+    _ensure_joinable(match)
+    if match.creator_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Match creator cannot create a join request for their own match",
+        )
+    participant = next((item for item in match.participants if item.user_id == current_user.id), None)
+    if participant and _enum(participant.status, ParticipantStatus) == ParticipantStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You are already an approved participant in this match",
+        )
+    if _has_active_join_request(db, match.id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a pending join request for this match",
+        )
+    normalized_position = _validate_requested_position(db, match.id, position_code)
+
+    join_request = MatchJoinRequest(
+        match_id=match.id,
+        user_id=current_user.id,
+        status=MatchJoinRequestStatus.PENDING,
+        requested_position_code=normalized_position,
+    )
+    try:
+        db.add(join_request)
+        db.flush()
+        db.commit()
+        return join_request
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a pending join request for this match",
+        )
+
+
+def withdraw_join_request(
+    db: Session,
+    request_id: int,
+    current_user: User,
+) -> MatchJoinRequest:
+    request = _get_join_request(db, request_id, lock=True)
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Join request not found",
+        )
+    if request.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only withdraw your own join request",
+        )
+    if _enum(request.status, MatchJoinRequestStatus) != MatchJoinRequestStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending join requests can be withdrawn",
+        )
+    request.status = MatchJoinRequestStatus.WITHDRAWN
+    db.commit()
+    return request
+
