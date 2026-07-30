@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_db
-from app.models.match import MatchStatus, SkillLevel
+from app.models.match import MatchJoinRequestStatus, MatchStatus, SkillLevel
 from app.models.user import User
 from app.schemas.match import (
     InviteCodeResponse,
@@ -13,6 +13,8 @@ from app.schemas.match import (
     MatchCreate,
     MatchCreateResponse,
     MatchDetailResponse,
+    MatchJoinRequestCreate,
+    MatchJoinRequestResponse,
     MatchParticipantManagementResponse,
     MatchPublicResponse,
     MatchUpdate,
@@ -84,6 +86,17 @@ def get_my_joined_matches(
     current_user: User = Depends(get_current_user),
 ):
     return [match_service.serialize_match(db, match, current_user) for match in match_service.list_joined_matches(db, current_user, status_filter, skip, limit)]
+
+
+@router.get("/me/join-requests", response_model=list[MatchJoinRequestResponse])
+def get_my_join_requests(
+    status_filter: MatchJoinRequestStatus | None = Query(default=None, alias="status"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return match_service.list_user_join_requests(db, current_user, status_filter, skip, limit)
 
 
 @router.get("/{match_id}", response_model=MatchDetailResponse)
@@ -171,3 +184,66 @@ def cancel_existing_match(match_id: int, db: Session = Depends(get_db), current_
 def complete_existing_match(match_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     match = match_service.complete_match(db, match_id, current_user)
     return match_service.serialize_match(db, match, current_user, detail=True)
+
+
+@router.post("/{match_id}/join-requests", response_model=MatchJoinRequestResponse, status_code=status.HTTP_201_CREATED)
+def create_join_request_endpoint(
+    match_id: int,
+    request_in: MatchJoinRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return match_service.create_join_request(
+        db, match_id, current_user, position_code=request_in.position_code
+    )
+
+
+@router.post("/{match_id}/join-requests/{request_id}/withdraw", response_model=MatchJoinRequestResponse)
+def withdraw_join_request_endpoint(
+    match_id: int,
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return match_service.withdraw_join_request(
+        db, request_id, current_user, expected_match_id=match_id
+    )
+
+
+@router.post("/{match_id}/join-requests/{request_id}/approve", response_model=MatchJoinRequestResponse)
+def approve_join_request_endpoint(
+    match_id: int,
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return match_service.approve_join_request(
+        db, request_id, current_user, expected_match_id=match_id
+    )
+
+
+@router.post("/{match_id}/join-requests/{request_id}/reject", response_model=MatchJoinRequestResponse)
+def reject_join_request_endpoint(
+    match_id: int,
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return match_service.reject_join_request(
+        db, request_id, current_user, expected_match_id=match_id
+    )
+
+
+@router.get("/{match_id}/join-requests", response_model=list[MatchJoinRequestResponse])
+def list_match_join_requests_endpoint(
+    match_id: int,
+    status_filter: MatchJoinRequestStatus | None = Query(default=None, alias="status"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return match_service.list_match_join_requests(
+        db, match_id, current_user, status_filter, skip, limit
+    )
+

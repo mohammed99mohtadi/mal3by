@@ -60,7 +60,7 @@ def get_match(db: Session, match_id: int, lock: bool = False) -> Match | None:
 
 
 def _get_join_request(db: Session, request_id: int, lock: bool = False) -> MatchJoinRequest | None:
-    statement = select(MatchJoinRequest).where(MatchJoinRequest.id == request_id)
+    statement = select(MatchJoinRequest).options(joinedload(MatchJoinRequest.requester)).where(MatchJoinRequest.id == request_id)
     if lock:
         statement = statement.with_for_update().execution_options(populate_existing=True)
     return db.execute(statement).scalar_one_or_none()
@@ -593,12 +593,18 @@ def withdraw_join_request(
     db: Session,
     request_id: int,
     current_user: User,
+    expected_match_id: int | None = None,
 ) -> MatchJoinRequest:
     request = _get_join_request(db, request_id, lock=True)
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Join request not found",
+        )
+    if expected_match_id is not None and request.match_id != expected_match_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Join request does not match the target match",
         )
     if request.user_id != current_user.id:
         raise HTTPException(
@@ -619,12 +625,18 @@ def approve_join_request(
     db: Session,
     request_id: int,
     current_user: User,
+    expected_match_id: int | None = None,
 ) -> MatchJoinRequest:
     initial_req = _get_join_request(db, request_id, lock=False)
     if not initial_req:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Join request not found",
+        )
+    if expected_match_id is not None and initial_req.match_id != expected_match_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Join request does not match the target match",
         )
     match = get_match(db, initial_req.match_id, lock=True)
     if not match:
@@ -635,7 +647,7 @@ def approve_join_request(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Join request not found",
         )
-    if request.match_id != match.id:
+    if request.match_id != match.id or (expected_match_id is not None and request.match_id != expected_match_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Join request does not match the target match",
@@ -701,12 +713,18 @@ def reject_join_request(
     db: Session,
     request_id: int,
     current_user: User,
+    expected_match_id: int | None = None,
 ) -> MatchJoinRequest:
     request = _get_join_request(db, request_id)
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Join request not found",
+        )
+    if expected_match_id is not None and request.match_id != expected_match_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Join request does not match the target match",
         )
     match = get_match(db, request.match_id)
     if not match:
@@ -725,5 +743,56 @@ def reject_join_request(
 
     db.commit()
     return request
+
+
+def list_match_join_requests(
+    db: Session,
+    match_id: int,
+    current_user: User,
+    status_filter: MatchJoinRequestStatus | None = None,
+    skip: int = 0,
+    limit: int = 20,
+) -> list[MatchJoinRequest]:
+    match = get_match(db, match_id)
+    if not match:
+        raise _not_found()
+    _require_manager(match, current_user)
+
+    statement = (
+        select(MatchJoinRequest)
+        .options(joinedload(MatchJoinRequest.requester))
+        .where(MatchJoinRequest.match_id == match_id)
+    )
+    if status_filter:
+        statement = statement.where(MatchJoinRequest.status == status_filter)
+    statement = (
+        statement.order_by(MatchJoinRequest.created_at.desc(), MatchJoinRequest.id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return list(db.execute(statement).scalars().all())
+
+
+def list_user_join_requests(
+    db: Session,
+    current_user: User,
+    status_filter: MatchJoinRequestStatus | None = None,
+    skip: int = 0,
+    limit: int = 20,
+) -> list[MatchJoinRequest]:
+    statement = (
+        select(MatchJoinRequest)
+        .options(joinedload(MatchJoinRequest.requester))
+        .where(MatchJoinRequest.user_id == current_user.id)
+    )
+    if status_filter:
+        statement = statement.where(MatchJoinRequest.status == status_filter)
+    statement = (
+        statement.order_by(MatchJoinRequest.created_at.desc(), MatchJoinRequest.id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return list(db.execute(statement).scalars().all())
+
 
 

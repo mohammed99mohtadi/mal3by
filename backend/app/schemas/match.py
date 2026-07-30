@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.match import MatchJoinPolicy, MatchStatus, MatchVisibility, ParticipantStatus, SkillLevel
+from app.models.match import MatchJoinPolicy, MatchJoinRequestStatus, MatchStatus, MatchVisibility, ParticipantStatus, SkillLevel
 
 
 class MatchCreate(BaseModel):
@@ -100,3 +100,30 @@ class MatchCreateResponse(MatchDetailResponse):
 
 class InviteCodeResponse(BaseModel):
     invite_code: str
+
+
+class MatchJoinRequestCreate(BaseModel):
+    position_code: str | None = Field(default=None, max_length=100)
+
+
+class MatchJoinRequestUserResponse(BaseModel):
+    id: int
+    full_name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MatchJoinRequestResponse(BaseModel):
+    id: int
+    match_id: int
+    user_id: int
+    status: MatchJoinRequestStatus
+    requested_position_code: str | None = None
+    reviewed_by_user_id: int | None = None
+    reviewed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    requester: MatchJoinRequestUserResponse | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
