@@ -1,2 +1,13 @@
-import Link from "next/link";
-export function BottomNavigation({locale}:{locale:string}){const links=[["Home",`/${locale}`],["Explore",`/${locale}/courts`],["Book",`/${locale}/courts`],["Bookings",`/${locale}/bookings`],["Profile",`/${locale}/profile`]];return <nav aria-label="Mobile navigation" className="bottom-nav">{links.map(([label,href])=><Link key={label} href={href}>{label}</Link>)}</nav>}
+import { cookies } from "next/headers";
+import { BottomNavItems } from "./bottom-nav-items";
+
+export interface BottomNavigationProps {
+  locale: string;
+}
+
+export async function BottomNavigation({ locale }: BottomNavigationProps) {
+  const cookieStore = await cookies();
+  const isLoggedIn = Boolean(cookieStore.get("mal3by_session"));
+
+  return <BottomNavItems locale={locale} isLoggedIn={isLoggedIn} />;
+}
