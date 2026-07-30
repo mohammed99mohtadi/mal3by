@@ -614,3 +614,105 @@ def withdraw_join_request(
     db.commit()
     return request
 
+
+def approve_join_request(
+    db: Session,
+    request_id: int,
+    current_user: User,
+) -> MatchJoinRequest:
+    request = _get_join_request(db, request_id)
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Join request not found",
+        )
+    match = get_match(db, request.match_id)
+    if not match:
+        raise _not_found()
+    _require_manager(match, current_user)
+    if _enum(request.status, MatchJoinRequestStatus) != MatchJoinRequestStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending join requests can be approved",
+        )
+    _ensure_active_for_participation(match)
+
+    participant = next((item for item in match.participants if item.user_id == request.user_id), None)
+    if participant and _enum(participant.status, ParticipantStatus) == ParticipantStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User is already an approved participant in this match",
+        )
+
+    if _approved_count(db, match.id) >= match.max_players:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Match is full",
+        )
+
+    _ensure_position_capacity(db, match.id, request.requested_position_code)
+
+    now = _now()
+    if participant:
+        participant.status = ParticipantStatus.APPROVED
+        participant.joined_at = now
+        participant.approved_at = now
+        participant.rejected_at = None
+        participant.left_at = None
+    else:
+        participant = MatchParticipant(
+            match_id=match.id,
+            user_id=request.user_id,
+            status=ParticipantStatus.APPROVED,
+            joined_at=now,
+            approved_at=now,
+        )
+        db.add(participant)
+
+    request.status = MatchJoinRequestStatus.APPROVED
+    request.reviewed_by_user_id = current_user.id
+    request.reviewed_at = now
+
+    try:
+        db.flush()
+        _refresh_capacity_status(db, match)
+        db.commit()
+        return request
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User is already an approved participant in this match",
+        )
+
+
+def reject_join_request(
+    db: Session,
+    request_id: int,
+    current_user: User,
+) -> MatchJoinRequest:
+    request = _get_join_request(db, request_id)
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Join request not found",
+        )
+    match = get_match(db, request.match_id)
+    if not match:
+        raise _not_found()
+    _require_manager(match, current_user)
+    if _enum(request.status, MatchJoinRequestStatus) != MatchJoinRequestStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending join requests can be rejected",
+        )
+
+    now = _now()
+    request.status = MatchJoinRequestStatus.REJECTED
+    request.reviewed_by_user_id = current_user.id
+    request.reviewed_at = now
+
+    db.commit()
+    return request
+
+
