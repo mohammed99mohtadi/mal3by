@@ -11,7 +11,10 @@ from app.models.court import Court
 from app.models.match import (
     Match,
     MatchJoinPolicy,
+    MatchJoinRequest,
+    MatchJoinRequestStatus,
     MatchParticipant,
+    MatchPositionRequirement,
     MatchStatus,
     MatchVisibility,
     ParticipantStatus,
@@ -56,6 +59,13 @@ def get_match(db: Session, match_id: int, lock: bool = False) -> Match | None:
     return db.execute(statement).unique().scalar_one_or_none()
 
 
+def _get_join_request(db: Session, request_id: int, lock: bool = False) -> MatchJoinRequest | None:
+    statement = select(MatchJoinRequest).where(MatchJoinRequest.id == request_id)
+    if lock:
+        statement = statement.with_for_update()
+    return db.execute(statement).scalar_one_or_none()
+
+
 def _not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
 
@@ -79,7 +89,90 @@ def _pending_count(db: Session, match_id: int) -> int:
     )) or 0)
 
 
+def _pending_join_request_count(db: Session, match_id: int) -> int:
+    return int(db.scalar(
+        select(func.count(MatchJoinRequest.id)).where(
+            MatchJoinRequest.match_id == match_id,
+            MatchJoinRequest.status == MatchJoinRequestStatus.PENDING,
+        )
+    ) or 0)
+
+
+def _has_active_join_request(db: Session, match_id: int, user_id: int) -> bool:
+    return bool(db.scalar(
+        select(MatchJoinRequest.id).where(
+            MatchJoinRequest.match_id == match_id,
+            MatchJoinRequest.user_id == user_id,
+            MatchJoinRequest.status == MatchJoinRequestStatus.PENDING,
+        )
+    ))
+
+
+def _validate_requested_position(db: Session, match_id: int, position_code: str | None) -> str | None:
+    if position_code is None:
+        return None
+    code = position_code.strip()
+    if not code:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Position code cannot be empty")
+    has_requirements = bool(db.scalar(
+        select(MatchPositionRequirement.id).where(MatchPositionRequirement.match_id == match_id)
+    ))
+    if has_requirements:
+        valid = bool(db.scalar(
+            select(MatchPositionRequirement.id).where(
+                MatchPositionRequirement.match_id == match_id,
+                MatchPositionRequirement.position_code == code,
+            )
+        ))
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Requested position is not available for this match",
+            )
+    return code
+
+
+def _approved_position_count(db: Session, match_id: int, position_code: str) -> int:
+    code = position_code.strip()
+    if not code:
+        return 0
+    return int(db.scalar(
+        select(func.count(func.distinct(MatchParticipant.user_id))).join(
+            MatchJoinRequest,
+            (MatchParticipant.match_id == MatchJoinRequest.match_id) & (MatchParticipant.user_id == MatchJoinRequest.user_id),
+        ).where(
+            MatchParticipant.match_id == match_id,
+            MatchParticipant.status == ParticipantStatus.APPROVED,
+            MatchJoinRequest.requested_position_code == code,
+            MatchJoinRequest.status == MatchJoinRequestStatus.APPROVED,
+        )
+    ) or 0)
+
+
+def _ensure_position_capacity(db: Session, match_id: int, position_code: str | None) -> None:
+    if position_code is None:
+        return
+    code = position_code.strip()
+    if not code:
+        return
+    requirement = db.execute(
+        select(MatchPositionRequirement).where(
+            MatchPositionRequirement.match_id == match_id,
+            MatchPositionRequirement.position_code == code,
+        )
+    ).scalar_one_or_none()
+    if not requirement:
+        return
+    current_approved = _approved_position_count(db, match_id, code)
+    if current_approved >= requirement.required_count:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Requested position is at full capacity",
+        )
+
+
 def _refresh_capacity_status(db: Session, match: Match) -> None:
+
     if _enum(match.status, MatchStatus) in (MatchStatus.CANCELLED, MatchStatus.COMPLETED):
         return
     match.status = MatchStatus.FULL if _approved_count(db, match.id) >= match.max_players else MatchStatus.OPEN
