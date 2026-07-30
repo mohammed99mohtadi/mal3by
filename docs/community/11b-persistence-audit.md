@@ -66,3 +66,7 @@ Whether repeat requests after withdrawal are allowed; whether positions are free
 
 ## 11B.2 Implementation Status
 Implemented `MatchPositionRequirement` (`match_position_requirements`) with a `RESTRICT` match FK, unique `(match_id, position_code)`, positive `required_count`, and trimmed non-empty position-code checks. The Match relationship is metadata-registered. Migration `f1b2c3d4e5f6` follows `d4b7e1c9a2f6`; migration execution was deliberately deferred because no isolated migration database was confirmed. SQLite-focused tests plus full regression passed: **155 passed, 16 warnings**. PostgreSQL validation remains required for migration execution and PostgreSQL-specific constraint behaviour.
+
+## 11B.3 Implementation Status
+Implemented `MatchJoinRequest` (`match_join_requests`) with `RESTRICT` match and user FKs, nullable `SET NULL` reviewer FK, status check constraint (`pending`, `approved`, `rejected`, `withdrawn`, `expired`), trimmed position-code check, single-column & composite indexes, and partial active-request unique index `uq_match_join_requests_pending_match_user`. Exported in model registry `app/models/__init__.py`. Migration `b8c9d0e1f2a3` follows `f1b2c3d4e5f6`. Targeted unit tests in `tests/test_match_join_requests.py` verified relationships, constraints, status persistence, and SQLite partial index uniqueness.
+
