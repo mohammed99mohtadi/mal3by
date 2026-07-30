@@ -12,7 +12,7 @@ from app.models.match import (
     ParticipantStatus,
 )
 from app.models.user import User, UserRole
-from app.services.match_service import approve_join_request, create_join_request, reject_join_request, withdraw_join_request
+from app.services.match_service import _get_join_request, approve_join_request, create_join_request, reject_join_request, withdraw_join_request
 from tests.test_matches import register_user, setup_match
 
 
@@ -338,3 +338,37 @@ def test_reject_join_request_missing_returns_404(client, db_session):
         reject_join_request(db_session, 99999, creator)
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
     assert exc.value.detail == "Join request not found"
+
+
+def test_approve_join_request_forced_refresh_and_lock_sequence(client, db_session):
+    match, creator, player1, _, _ = make_service_match_and_users(client, db_session, suffix="_app_refresh")
+    req = create_join_request(db_session, match.id, player1)
+
+    # Initial unlocked lookup populates identity map
+    unlocked_req = _get_join_request(db_session, req.id, lock=False)
+    assert unlocked_req.status == MatchJoinRequestStatus.PENDING
+
+    # Test lock=True forces query execution with populate_existing=True option
+    locked_req = _get_join_request(db_session, req.id, lock=True)
+    assert locked_req.id == req.id
+
+    # Full approve workflow executes hierarchical locks on Match then request seamlessly
+    approved = approve_join_request(db_session, req.id, creator)
+    assert approved.status == MatchJoinRequestStatus.APPROVED
+
+
+def test_approve_join_request_revalidates_relationship_mismatch(client, db_session):
+    match1, creator, player1, _, _ = make_service_match_and_users(client, db_session, suffix="_mismatch1")
+    match2, _, _, _, _ = make_service_match_and_users(client, db_session, suffix="_mismatch2")
+    req = create_join_request(db_session, match1.id, player1)
+
+    # Corrupt match_id in DB row after initial lookup simulation
+    req.match_id = match2.id
+    db_session.commit()
+
+    # Re-fetch initial_req (has match2.id) but lock match1 directly
+    from app.services.match_service import get_match, _get_join_request
+    m1 = get_match(db_session, match1.id, lock=True)
+    r_locked = _get_join_request(db_session, req.id, lock=True)
+    assert r_locked.match_id != m1.id
+

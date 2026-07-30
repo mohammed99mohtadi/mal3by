@@ -55,14 +55,14 @@ def _match_query():
 def get_match(db: Session, match_id: int, lock: bool = False) -> Match | None:
     statement = _match_query().where(Match.id == match_id)
     if lock:
-        statement = statement.with_for_update()
+        statement = statement.with_for_update().execution_options(populate_existing=True)
     return db.execute(statement).unique().scalar_one_or_none()
 
 
 def _get_join_request(db: Session, request_id: int, lock: bool = False) -> MatchJoinRequest | None:
     statement = select(MatchJoinRequest).where(MatchJoinRequest.id == request_id)
     if lock:
-        statement = statement.with_for_update()
+        statement = statement.with_for_update().execution_options(populate_existing=True)
     return db.execute(statement).scalar_one_or_none()
 
 
@@ -620,15 +620,26 @@ def approve_join_request(
     request_id: int,
     current_user: User,
 ) -> MatchJoinRequest:
-    request = _get_join_request(db, request_id)
+    initial_req = _get_join_request(db, request_id, lock=False)
+    if not initial_req:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Join request not found",
+        )
+    match = get_match(db, initial_req.match_id, lock=True)
+    if not match:
+        raise _not_found()
+    request = _get_join_request(db, request_id, lock=True)
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Join request not found",
         )
-    match = get_match(db, request.match_id)
-    if not match:
-        raise _not_found()
+    if request.match_id != match.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Join request does not match the target match",
+        )
     _require_manager(match, current_user)
     if _enum(request.status, MatchJoinRequestStatus) != MatchJoinRequestStatus.PENDING:
         raise HTTPException(
