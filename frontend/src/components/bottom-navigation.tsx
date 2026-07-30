@@ -1,0 +1,2 @@
+import Link from "next/link";
+export function BottomNavigation({locale}:{locale:string}){const links=[["Home",`/${locale}`],["Explore",`/${locale}/courts`],["Book",`/${locale}/courts`],["Bookings",`/${locale}/bookings`],["Profile",`/${locale}/profile`]];return <nav aria-label="Mobile navigation" className="bottom-nav">{links.map(([label,href])=><Link key={label} href={href}>{label}</Link>)}</nav>}

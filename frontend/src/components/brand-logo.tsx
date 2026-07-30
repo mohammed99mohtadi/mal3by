@@ -1,0 +1,2 @@
+import Link from "next/link";
+export function BrandLogo({locale,compact=false}:{locale:string;compact?:boolean}){return <Link aria-label="Mal3by home" className="flex items-center gap-2 font-black text-white focus-ring" href={`/${locale}`}><span aria-hidden className="grid size-9 place-items-center rounded-lg bg-[var(--primary)] text-black">M</span>{!compact&&<span className="text-xl">Mal3by</span>}</Link>}

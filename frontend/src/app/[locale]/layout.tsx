@@ -1,5 +1,3 @@
-import type { Metadata } from "next";
-import "../globals.css";
-import { Header } from "@/components/header";
-export const metadata:Metadata={title:"Mal3by | Sports courts",description:"Discover sports courts in Kuwait"};
-export default async function LocaleLayout({children,params}:{children:React.ReactNode;params:Promise<{locale:string}>}){const {locale}=await params;const safe=locale==="en"?"en":"ar";return <html lang={safe} dir={safe==="ar"?"rtl":"ltr"}><body><Header locale={safe}/><main>{children}</main><footer className="border-t border-emerald-950/10 p-8 text-center text-sm text-emerald-950/70">Mal3by · Kuwait sports booking</footer></body></html>}
+import type { Metadata } from "next";import { Cairo,Poppins } from "next/font/google";import "../globals.css";import { Header } from "@/components/header";import { BottomNavigation } from "@/components/bottom-navigation";
+export const metadata:Metadata={title:"Mal3by | Sports courts",description:"Discover sports courts in Kuwait"};const cairo=Cairo({subsets:["arabic"],variable:"--font-cairo"});const poppins=Poppins({subsets:["latin"],weight:["400","600","700","800"],variable:"--font-poppins"});
+export default async function LocaleLayout({children,params}:{children:React.ReactNode;params:Promise<{locale:string}>}){const {locale}=await params;const safe=locale==="en"?"en":"ar";return <html lang={safe} dir={safe==="ar"?"rtl":"ltr"} className={`${cairo.variable} ${poppins.variable}`}><body className={safe==="ar"?"font-ar":"font-en"}><Header locale={safe}/><main>{children}</main><footer className="border-t border-[var(--border)] px-5 py-10 text-center text-sm text-[var(--muted)]">Mal3by · Kuwait sports booking</footer><BottomNavigation locale={safe}/></body></html>}
