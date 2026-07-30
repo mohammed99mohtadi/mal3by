@@ -73,6 +73,25 @@ class Match(Base):
     court = relationship("Court", back_populates="matches")
     booking = relationship("Booking", back_populates="match")
     participants = relationship("MatchParticipant", back_populates="match")
+    position_requirements = relationship("MatchPositionRequirement", back_populates="match")
+
+
+class MatchPositionRequirement(Base):
+    __tablename__ = "match_position_requirements"
+    __table_args__ = (
+        UniqueConstraint("match_id", "position_code", name="uq_match_position_requirements_match_position"),
+        CheckConstraint("required_count > 0", name="ck_match_position_requirements_positive_count"),
+        CheckConstraint("length(trim(position_code)) > 0", name="ck_match_position_requirements_position_code"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="RESTRICT"), nullable=False, index=True)
+    position_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    required_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    match = relationship("Match", back_populates="position_requirements")
 
 
 class MatchParticipant(Base):

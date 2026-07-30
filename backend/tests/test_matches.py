@@ -54,9 +54,9 @@ def create_match(client, booking_id, token, **overrides):
     return response
 
 
-def setup_match(client, db_session, visibility="public", join_policy="open", max_players=4):
-    _, admin_token = register_user(client, db_session, "match_admin@example.com", UserRole.ADMIN)
-    creator_id, creator_token = register_user(client, db_session, "match_creator@example.com")
+def setup_match(client, db_session, visibility="public", join_policy="open", max_players=4, suffix=""):
+    _, admin_token = register_user(client, db_session, f"match_admin{suffix}@example.com", UserRole.ADMIN)
+    creator_id, creator_token = register_user(client, db_session, f"match_creator{suffix}@example.com")
     court_id = create_court(client, db_session, admin_token)
     booking_id = confirmed_booking(client, court_id, creator_token)
     response = create_match(client, booking_id, creator_token, visibility=visibility, join_policy=join_policy, max_players=max_players)
