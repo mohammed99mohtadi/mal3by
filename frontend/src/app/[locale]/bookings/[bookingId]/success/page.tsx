@@ -1,2 +1,16 @@
-import Link from "next/link";import { cookies } from "next/headers";import { redirect,notFound } from "next/navigation";import { api } from "@/lib/api";import { bookingLabel } from "@/lib/booking";import { BrandLogo } from "@/components/brand-logo";
-export default async function Success({params}:{params:Promise<{locale:string;bookingId:string}>}){const {locale,bookingId}=await params;const token=(await cookies()).get("mal3by_session")?.value;if(!token)redirect(`/${locale}/login`);let booking;try{booking=await api.booking(token,bookingId)}catch{notFound()}return <section className="page-wrap max-w-xl text-center"><div className="surface p-8"><div className="mx-auto w-fit"><BrandLogo locale={locale} compact/></div><div className="mx-auto mt-8 grid size-16 place-items-center rounded-full bg-[var(--success)] text-3xl text-black">✓</div><h1 className="mt-5 text-3xl font-black">Reservation updated</h1><p className="mt-3 muted">Reference #{booking.id} · {bookingLabel[booking.status]}</p><p className="mt-5 font-bold">{booking.court?.[locale==="ar"?"name_ar":"name_en"]??`Court #${booking.court_id}`}</p><p className="mt-2">{booking.total_price} {booking.currency}</p><div className="mt-8 flex flex-wrap justify-center gap-3"><Link className="brand-button px-4 py-2" href={`/${locale}/bookings/${booking.id}`}>View booking</Link><Link className="rounded-lg border border-[var(--border)] px-4 py-2" href={`/${locale}/bookings`}>My Bookings</Link></div></div></section>}
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { Alert } from "@/components/ui/alert";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Surface } from "@/components/ui/surface";
+import { api } from "@/lib/api";
+import { bookingLabel, bookingTone } from "@/lib/booking";
+import { copy, type Locale } from "@/lib/copy";
+
+export default async function Success({ params }: { params: Promise<{ locale: string; bookingId: string }> }) {
+  const { locale, bookingId } = await params; const l = (locale === "en" ? "en" : "ar") as Locale; const text = copy[l]; const token = (await cookies()).get("mal3by_session")?.value;
+  if (!token) redirect(`/${l}/login`);
+  let booking; try { booking = await api.booking(token, bookingId); } catch { return <section className="page-wrap max-w-xl"><h1 className="text-3xl font-black">{text.bookingSuccessTitle}</h1><Alert tone="danger" message={text.bookingNotFound} className="mt-6" /></section>; }
+  return <section className="page-wrap max-w-xl"><Surface className="text-center" padding="lg"><StatusBadge status={bookingTone(booking.status)}>{bookingLabel(l, booking.status)}</StatusBadge><h1 className="mt-5 text-3xl font-black">{text.bookingSuccessTitle}</h1><p className="mt-3 text-[var(--text-muted)]">{text.bookingReference} #{booking.id}</p><p className="mt-5 font-bold">{booking.court?.[l === "ar" ? "name_ar" : "name_en"] ?? `${text.bookingCourt} #${booking.court_id}`}</p><p className="mt-2 text-sm">{new Date(booking.start_time).toLocaleString(l)}</p><div className="mt-8 flex flex-wrap justify-center gap-3"><Link className="focus-ring rounded-[var(--radius-md)] bg-[var(--brand)] px-4 py-2.5 font-bold text-[var(--brand-foreground)]" href={`/${l}/bookings/${booking.id}`}>{text.bookingView}</Link><Link className="focus-ring rounded-[var(--radius-md)] border border-[var(--border-strong)] px-4 py-2.5 font-bold" href={`/${l}/bookings`}>{text.bookingMyBookings}</Link><Link className="focus-ring rounded-[var(--radius-md)] border border-[var(--border-strong)] px-4 py-2.5 font-bold" href={`/${l}/courts`}>{text.courts}</Link></div></Surface></section>;
+}
