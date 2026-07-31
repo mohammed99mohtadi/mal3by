@@ -70,6 +70,18 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
 
 
+def _ensure_join_request_visible(match: Match, current_user: User) -> None:
+    if _enum(match.visibility, MatchVisibility) != MatchVisibility.PRIVATE:
+        return
+    participant = next((
+        item for item in match.participants
+        if item.user_id == current_user.id
+        and _enum(item.status, ParticipantStatus) in (ParticipantStatus.APPROVED, ParticipantStatus.PENDING)
+    ), None)
+    if not (_is_manager(match, current_user) or participant):
+        raise _not_found()
+
+
 def _require_manager(match: Match, current_user: User) -> None:
     if not _is_manager(match, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the match creator or an administrator can manage this match")
@@ -546,6 +558,7 @@ def create_join_request(
     match = get_match(db, match_id, lock=True)
     if not match:
         raise _not_found()
+    _ensure_join_request_visible(match, current_user)
     if _enum(match.join_policy, MatchJoinPolicy) != MatchJoinPolicy.APPROVAL_REQUIRED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -793,6 +806,5 @@ def list_user_join_requests(
         .limit(limit)
     )
     return list(db.execute(statement).scalars().all())
-
 
 

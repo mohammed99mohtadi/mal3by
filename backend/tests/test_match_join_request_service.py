@@ -9,6 +9,7 @@ from app.models.match import (
     MatchParticipant,
     MatchPositionRequirement,
     MatchStatus,
+    MatchVisibility,
     ParticipantStatus,
 )
 from app.models.user import User, UserRole
@@ -71,6 +72,39 @@ def test_create_join_request_rejection_for_open_policy(client, db_session):
 
 def test_create_join_request_rejection_for_creator(client, db_session):
     match, creator, player1, _, _ = make_service_match_and_users(client, db_session, suffix="_creator")
+
+    with pytest.raises(HTTPException) as exc:
+        create_join_request(db_session, match.id, creator)
+    assert exc.value.status_code == status.HTTP_409_CONFLICT
+    assert exc.value.detail == "Match creator cannot create a join request for their own match"
+
+
+def test_create_join_request_private_match_rejected_for_stranger(client, db_session):
+    match, _, player1, _, _ = make_service_match_and_users(client, db_session, suffix="_private_stranger")
+    match.visibility = MatchVisibility.PRIVATE
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        create_join_request(db_session, match.id, player1)
+    assert exc.value.status_code == status.HTTP_404_NOT_FOUND
+    assert exc.value.detail == "Match not found"
+
+
+def test_create_join_request_private_match_allowed_for_existing_participant(client, db_session):
+    match, _, player1, _, _ = make_service_match_and_users(client, db_session, suffix="_private_participant")
+    match.visibility = MatchVisibility.PRIVATE
+    db_session.add(MatchParticipant(match_id=match.id, user_id=player1.id, status=ParticipantStatus.PENDING))
+    db_session.commit()
+
+    request = create_join_request(db_session, match.id, player1)
+    assert request.status == MatchJoinRequestStatus.PENDING
+    assert request.user_id == player1.id
+
+
+def test_create_join_request_private_match_allowed_for_creator(client, db_session):
+    match, creator, _, _, _ = make_service_match_and_users(client, db_session, suffix="_private_creator")
+    match.visibility = MatchVisibility.PRIVATE
+    db_session.commit()
 
     with pytest.raises(HTTPException) as exc:
         create_join_request(db_session, match.id, creator)
@@ -371,4 +405,3 @@ def test_approve_join_request_revalidates_relationship_mismatch(client, db_sessi
     m1 = get_match(db_session, match1.id, lock=True)
     r_locked = _get_join_request(db_session, req.id, lock=True)
     assert r_locked.match_id != m1.id
-
