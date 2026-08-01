@@ -1,13 +1,7 @@
 import { cookies } from "next/headers";
+import type { Locale } from "@/lib/copy";
 import { BottomNavItems } from "./bottom-nav-items";
 
-export interface BottomNavigationProps {
-  locale: string;
-}
-
-export async function BottomNavigation({ locale }: BottomNavigationProps) {
-  const cookieStore = await cookies();
-  const isLoggedIn = Boolean(cookieStore.get("mal3by_session"));
-
-  return <BottomNavItems locale={locale} isLoggedIn={isLoggedIn} />;
+export async function BottomNavigation({ locale }: { locale: Locale }) {
+  return <BottomNavItems locale={locale} isLoggedIn={Boolean((await cookies()).get("mal3by_session"))} />;
 }

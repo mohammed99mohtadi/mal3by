@@ -1,3 +1,18 @@
-import type { Metadata } from "next";import { Cairo,Poppins } from "next/font/google";import "../globals.css";import { Header } from "@/components/header";import { BottomNavigation } from "@/components/bottom-navigation";import { SkipLink } from "@/components/ui/skip-link";
-export const metadata:Metadata={title:"Mal3by | Sports courts",description:"Discover sports courts in Kuwait"};const cairo=Cairo({subsets:["arabic"],variable:"--font-cairo"});const poppins=Poppins({subsets:["latin"],weight:["400","600","700","800"],variable:"--font-poppins"});
-export default async function LocaleLayout({children,params}:{children:React.ReactNode;params:Promise<{locale:string}>}){const {locale}=await params;const safe=locale==="en"?"en":"ar";return <html lang={safe} dir={safe==="ar"?"rtl":"ltr"} className={`${cairo.variable} ${poppins.variable}`}><body className={safe==="ar"?"font-ar":"font-en"}><SkipLink locale={safe}/><Header locale={safe}/><main id="main-content" tabIndex={-1}>{children}</main><footer className="border-t border-[var(--border)] px-5 py-10 text-center text-sm text-[var(--muted)]">Mal3by · Kuwait sports booking</footer><BottomNavigation locale={safe}/></body></html>}
+import type { Metadata } from "next";
+import { Cairo, Poppins } from "next/font/google";
+import "../globals.css";
+import { Header } from "@/components/header";
+import { BottomNavigation } from "@/components/bottom-navigation";
+import { SiteFooter } from "@/components/site-footer";
+import { SkipLink } from "@/components/ui/skip-link";
+import { cookies } from "next/headers";
+import type { Locale } from "@/lib/copy";
+
+export const metadata: Metadata = { title: "Mal3by | Sports courts", description: "Discover sports courts in Kuwait" };
+const cairo = Cairo({ subsets: ["arabic"], variable: "--font-cairo" });
+const poppins = Poppins({ subsets: ["latin"], weight: ["400", "600", "700", "800"], variable: "--font-poppins" });
+
+export default async function LocaleLayout({ children, params }: { children: React.ReactNode; params: Promise<{ locale: string }> }) {
+  const { locale } = await params; const safe = (locale === "en" ? "en" : "ar") as Locale; const isLoggedIn = Boolean((await cookies()).get("mal3by_session"));
+  return <html lang={safe} dir={safe === "ar" ? "rtl" : "ltr"} className={`${cairo.variable} ${poppins.variable}`}><body className={`${safe === "ar" ? "font-ar" : "font-en"} app-shell`}><SkipLink locale={safe} /><Header locale={safe} /><main id="main-content" tabIndex={-1} className="main-content">{children}</main><SiteFooter locale={safe} isLoggedIn={isLoggedIn} /><BottomNavigation locale={safe} /></body></html>;
+}

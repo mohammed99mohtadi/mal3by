@@ -1,29 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { copy, type Locale } from "@/lib/copy";
+import { localeHref } from "@/lib/navigation";
 
-export interface LocaleSwitcherProps {
-  locale: string;
-}
-
-export function LocaleSwitcher({ locale }: LocaleSwitcherProps) {
-  const pathname = usePathname() || `/${locale}`;
-  const currentLocale = (locale === "en" ? "en" : "ar") as Locale;
-  const targetLocale: Locale = currentLocale === "ar" ? "en" : "ar";
-
-  // Replace leading /[locale] with target locale
-  const targetPathname = pathname.replace(/^\/(ar|en)/, `/${targetLocale}`);
-  const t = copy[currentLocale];
-
-  return (
-    <Link
-      href={targetPathname}
-      aria-label={t.switchLang}
-      className="inline-flex items-center justify-center min-h-[38px] px-3 rounded-[var(--radius-sm)] font-bold text-xs text-[var(--text-secondary)] border border-[var(--border-subtle)] bg-[var(--surface-2)] hover:border-[var(--brand)] hover:text-[var(--brand)] transition-colors focus-ring"
-    >
-      {t.switchLangShort}
-    </Link>
-  );
+export function LocaleSwitcher({ locale, compact = false }: { locale: Locale; compact?: boolean }) {
+  const pathname = usePathname() || `/${locale}`; const searchParams = useSearchParams(); const target: Locale = locale === "ar" ? "en" : "ar"; const t = copy[locale];
+  return <Link href={localeHref(pathname, target, searchParams)} replace hrefLang={target} lang={target} aria-label={t.switchLang} className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 text-xs font-bold text-[var(--text-secondary)] transition-colors hover:border-[var(--brand)] hover:text-[var(--brand)]"><span aria-hidden>{target.toUpperCase()}</span>{!compact && <span className="hidden xl:inline">{t.switchLangShort}</span>}</Link>;
 }

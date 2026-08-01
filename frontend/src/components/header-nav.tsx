@@ -2,94 +2,29 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { copy, type Locale } from "@/lib/copy";
 import { BrandLogo } from "@/components/brand-logo";
 import { LocaleSwitcher } from "@/components/locale-switcher";
-import { Button } from "@/components/ui/button";
+import { UserMenu } from "@/components/user-menu";
+import { copy, type Locale } from "@/lib/copy";
+import { activeSection } from "@/lib/navigation";
 
-export interface HeaderNavProps {
-  locale: string;
-  isLoggedIn: boolean;
-}
+export interface HeaderNavProps { locale: Locale; isLoggedIn: boolean; userName?: string; }
 
-export function HeaderNav({ locale, isLoggedIn }: HeaderNavProps) {
-  const pathname = usePathname() || `/${locale}`;
-  const currentLocale = (locale === "en" ? "en" : "ar") as Locale;
-  const t = copy[currentLocale];
-
-  const isCourtsActive = pathname.startsWith(`/${locale}/courts`);
-  const isBookingsActive = pathname.startsWith(`/${locale}/bookings`);
-  const isProfileActive = pathname.startsWith(`/${locale}/profile`);
-
-  return (
-    <header className="sticky top-0 z-20 border-b border-[var(--border-strong)] bg-[var(--bg-app)]/90 backdrop-blur-md">
-      <nav
-        aria-label="Main navigation"
-        className="page-wrap py-3 flex items-center justify-between gap-4"
-      >
-        <BrandLogo locale={locale} />
-
-        <div className="hidden md:flex items-center gap-6 text-sm font-semibold">
-          <Link
-            href={`/${locale}/courts`}
-            aria-current={isCourtsActive ? "page" : undefined}
-            className={`transition-colors focus-ring ${
-              isCourtsActive
-                ? "text-[var(--brand)] font-bold"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            }`}
-          >
-            {t.courts}
-          </Link>
-
-          {isLoggedIn && (
-            <Link
-              href={`/${locale}/bookings`}
-              aria-current={isBookingsActive ? "page" : undefined}
-              className={`transition-colors focus-ring ${
-                isBookingsActive
-                  ? "text-[var(--brand)] font-bold"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              {t.bookings}
-            </Link>
-          )}
-
-          <LocaleSwitcher locale={locale} />
-
-          {isLoggedIn ? (
-            <>
-              <Link
-                href={`/${locale}/profile`}
-                aria-current={isProfileActive ? "page" : undefined}
-                className={`transition-colors focus-ring ${
-                  isProfileActive
-                    ? "text-[var(--brand)] font-bold"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {t.profile}
-              </Link>
-              <form action="/api/auth/logout" method="post">
-                <Button type="submit" variant="ghost" size="sm">
-                  {t.logout}
-                </Button>
-              </form>
-            </>
-          ) : (
-            <Link href={`/${locale}/login`}>
-              <Button variant="primary" size="sm" type="button">
-                {t.login}
-              </Button>
-            </Link>
-          )}
-        </div>
-
-        <div className="flex md:hidden items-center gap-2">
-          <LocaleSwitcher locale={locale} />
-        </div>
-      </nav>
-    </header>
-  );
+export function HeaderNav({ locale, isLoggedIn, userName }: HeaderNavProps) {
+  const pathname = usePathname() || `/${locale}`; const active = activeSection(pathname); const t = copy[locale];
+  const linkClass = (current: boolean) => `focus-ring rounded-[var(--radius-sm)] px-3 py-2 transition-colors ${current ? "bg-[var(--brand)]/10 font-bold text-[var(--brand)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"}`;
+  return <header className="sticky top-0 z-30 border-b border-[var(--border-strong)] bg-[var(--bg-app)]/90 backdrop-blur-md">
+    <nav aria-label={t.mainNavigation} className="page-wrap flex min-h-[var(--header-height)] items-center justify-between gap-3 py-2">
+      <BrandLogo locale={locale} />
+      <div className="hidden items-center gap-1 lg:flex">
+        <Link href={`/${locale}`} aria-current={active === "home" ? "page" : undefined} className={linkClass(active === "home")}>{t.navHome}</Link>
+        <Link href={`/${locale}/courts`} aria-current={active === "courts" ? "page" : undefined} className={linkClass(active === "courts")}>{t.navCourts}</Link>
+        {isLoggedIn && <Link href={`/${locale}/bookings`} aria-current={active === "bookings" ? "page" : undefined} className={linkClass(active === "bookings")}>{t.navBookings}</Link>}
+      </div>
+      <div className="flex items-center gap-2">
+        <LocaleSwitcher locale={locale} />
+        {isLoggedIn ? <UserMenu locale={locale} name={userName} /> : <div className="hidden items-center gap-2 lg:flex"><Link className={linkClass(active === "auth")} href={`/${locale}/login`}>{t.login}</Link><Link className="focus-ring inline-flex min-h-11 items-center rounded-[var(--radius-md)] bg-[var(--brand)] px-4 text-sm font-bold text-[var(--brand-foreground)]" href={`/${locale}/register`}>{t.register}</Link></div>}
+      </div>
+    </nav>
+  </header>;
 }

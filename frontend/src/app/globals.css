@@ -48,6 +48,7 @@
   --page-gutter: clamp(1rem, 4vw, 2.5rem);
   --content-max: 1120px;
   --mobile-nav-height: 76px;
+  --header-height: 64px;
   --touch-target: 2.75rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
@@ -85,6 +86,8 @@
 
 html {
   background: var(--bg-app);
+  overflow-x: clip;
+  scroll-padding-top: calc(var(--header-height) + var(--space-3));
 }
 
 body {
@@ -93,6 +96,10 @@ body {
   color: var(--text-primary);
   font-family: var(--font-app), Arial, sans-serif;
 }
+
+.app-shell { min-height: 100dvh; display: flex; flex-direction: column; overflow-x: clip; }
+.main-content { flex: 1 0 auto; width: 100%; }
+.main-content:focus { outline: none; }
 
 .font-ar { --font-app: var(--font-cairo); line-height: 1.65; }
 .font-en { --font-app: var(--font-poppins); line-height: 1.5; }
@@ -199,7 +206,7 @@ body:has([role="dialog"][aria-modal="true"]) { overflow: hidden; }
   display: none;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 1023px) {
   body {
     padding-bottom: calc(var(--mobile-nav-height) + var(--safe-bottom));
   }
@@ -231,6 +238,8 @@ body:has([role="dialog"][aria-modal="true"]) { overflow: hidden; }
   .bottom-nav a:focus-visible {
     color: var(--brand);
   }
+
+  .bottom-nav a.is-active { color: var(--brand); font-weight: 800; }
 }
 
 @media (prefers-reduced-motion: reduce) {
