@@ -11,7 +11,6 @@ from app.schemas.booking import (
     BookingCreate,
     BookingHoldCreate,
     BookingHoldStatusResponse,
-    BookingPaymentConfirm,
     BookingRead,
     BookingStatusUpdate,
 )
@@ -20,12 +19,12 @@ from app.services.booking_service import (
     cancel_booking,
     cancel_user_hold,
     check_court_availability,
-    confirm_booking_payment,
     create_booking,
     create_booking_hold,
     get_booking_by_id,
     get_hold_status,
     list_user_bookings,
+    reject_untrusted_booking_confirmation,
     update_booking_status,
 )
 
@@ -160,12 +159,11 @@ def cancel_booking_hold_endpoint(
 @router.post("/{booking_id}/confirm-payment", response_model=BookingRead)
 def confirm_booking_payment_endpoint(
     booking_id: int,
-    confirm_in: BookingPaymentConfirm | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_user),
 ):
-    """Confirm successful payment for a reservation hold."""
-    return confirm_booking_payment(db=db, booking_id=booking_id, current_user=current_user)
+    """Reject public confirmation until a verified payment integration exists."""
+    return reject_untrusted_booking_confirmation(db=db, booking_id=booking_id)
 
 
 @router.post("/{booking_id}/cancel", response_model=BookingRead)

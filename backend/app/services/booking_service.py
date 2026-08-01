@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import HTTPException, status
 from sqlalchemy import select, or_, and_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.booking import Booking, BookingStatus
@@ -15,6 +15,11 @@ from app.services.pricing_service import calculate_booking_price
 
 BOOKING_ACTIVE_TIME_OVERLAP_CONSTRAINT = "excl_bookings_active_court_time_overlap"
 BOOKING_OVERLAP_DETAIL = "The requested time slot overlaps with an existing booking or buffer period."
+BOOKING_CONFIRMATION_FORBIDDEN_DETAIL = (
+    "Booking confirmation requires a trusted internal payment flow or a privileged booking manager."
+)
+BOOKING_CONFIRMATION_CONFLICT_DETAIL = "Booking confirmation could not be completed because of a database conflict."
+BOOKING_CONFIRMATION_INTERNAL_DETAIL = "Booking confirmation could not be completed."
 
 ALLOWED_TRANSITIONS = {
     BookingStatus.PENDING_PAYMENT: {
@@ -232,10 +237,9 @@ def cancel_user_hold(
     return get_booking_by_id(db, booking.id)
 
 
-def confirm_booking_payment(
+def reject_untrusted_booking_confirmation(
     db: Session,
     booking_id: int,
-    current_user: User,
 ) -> Booking:
     booking = get_booking_by_id(db, booking_id)
     if not booking:
@@ -244,15 +248,32 @@ def confirm_booking_payment(
             detail=f"Booking with id {booking_id} not found",
         )
 
-    is_owner = booking.user_id == current_user.id
-    is_court_owner = booking.court and booking.court.owner_id == current_user.id
-    is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=BOOKING_CONFIRMATION_FORBIDDEN_DETAIL,
+    )
 
-    if not (is_owner or is_court_owner or is_admin):
+
+def _commit_confirmation_change(db: Session, booking: Booking) -> None:
+    try:
+        db.commit()
+        db.refresh(booking)
+    except IntegrityError as exc:
+        db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to confirm payment for this booking",
-        )
+            status_code=status.HTTP_409_CONFLICT,
+            detail=BOOKING_CONFIRMATION_CONFLICT_DETAIL,
+        ) from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=BOOKING_CONFIRMATION_INTERNAL_DETAIL,
+        ) from exc
+
+
+def _confirm_booking(db: Session, booking: Booking) -> Booking:
+    """Apply confirmation after caller has established trusted authority."""
 
     now_utc = datetime.now(timezone.utc)
     cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
@@ -269,7 +290,7 @@ def confirm_booking_payment(
         booking.status = BookingStatus.EXPIRED
         booking.expired_at = now_utc
         booking.status_updated_at = now_utc
-        db.commit()
+        _commit_confirmation_change(db, booking)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Reservation hold has expired and cannot be confirmed.",
@@ -280,9 +301,24 @@ def confirm_booking_payment(
     booking.confirmed_at = now_utc
     booking.status_updated_at = now_utc
 
-    db.commit()
-    db.refresh(booking)
+    _commit_confirmation_change(db, booking)
     return get_booking_by_id(db, booking.id)
+
+
+def confirm_booking_after_verified_payment(db: Session, booking_id: int) -> Booking:
+    """Trusted internal extension point for a future verified payment handler.
+
+    This function is intentionally not exposed by an HTTP route. Future payment
+    code must verify provider authenticity, amount, currency, and replay safety
+    before calling it.
+    """
+    booking = get_booking_by_id(db, booking_id)
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Booking with id {booking_id} not found",
+        )
+    return _confirm_booking(db, booking)
 
 
 def check_court_availability(
@@ -423,6 +459,9 @@ def update_booking_status(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid status transition from {cur_status_enum.value} to {new_status_enum.value}",
         )
+
+    if new_status_enum == BookingStatus.CONFIRMED:
+        return _confirm_booking(db, booking)
 
     now_utc = datetime.now(timezone.utc)
     booking.status = new_status_enum

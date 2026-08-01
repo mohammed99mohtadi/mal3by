@@ -2,9 +2,10 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import time
 import pytest
-from fastapi import status
+from fastapi import HTTPException, status
 
 from app.models.booking import BookingStatus
+from app.services.booking_service import confirm_booking_after_verified_payment
 from app.models.user import UserRole
 from app.models.court import Court
 from app.models.sport import Sport
@@ -181,7 +182,7 @@ def test_pricing_snapshot_stored_on_hold(client, db_session):
     assert data["pricing_breakdown"] is not None
 
 
-# 7. pending_payment to confirmed succeeds
+# 7. trusted internal pending_payment to confirmed succeeds
 def test_pending_payment_to_confirmed_succeeds(client, db_session):
     _, admin_token = register_user(client, db_session, "admin_l7@example.com", UserRole.ADMIN)
     _, user_token = register_user(client, db_session, "user_l7@example.com", UserRole.PLAYER)
@@ -192,11 +193,83 @@ def test_pending_payment_to_confirmed_succeeds(client, db_session):
     r_hold = client.post("/api/v1/bookings/hold", json={"court_id": court_id, "start_time": start_t.isoformat(), "end_time": (start_t + timedelta(hours=1)).isoformat()}, headers=h_user)
     b_id = r_hold.json()["id"]
 
-    # User confirms payment
-    r_conf = client.post(f"/api/v1/bookings/{b_id}/confirm-payment", headers=h_user)
-    assert r_conf.status_code == status.HTTP_200_OK
-    assert r_conf.json()["status"] == BookingStatus.CONFIRMED
-    assert r_conf.json()["confirmed_at"] is not None
+    confirmed = confirm_booking_after_verified_payment(db_session, b_id)
+    assert confirmed.status == BookingStatus.CONFIRMED
+    assert confirmed.confirmed_at is not None
+
+
+def test_public_confirmation_rejects_owner_other_user_and_admin(client, db_session):
+    _, admin_token = register_user(client, db_session, "admin_a2_public@example.com", UserRole.ADMIN)
+    _, owner_token = register_user(client, db_session, "owner_a2_public@example.com")
+    _, other_token = register_user(client, db_session, "other_a2_public@example.com")
+    court_id = create_court(client, db_session, admin_token)
+    start_t = get_aligned_future_datetime(days_offset=7)
+    hold = client.post(
+        "/api/v1/bookings/hold",
+        json={"court_id": court_id, "start_time": start_t.isoformat(), "end_time": (start_t + timedelta(hours=1)).isoformat()},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    booking_id = hold.json()["id"]
+
+    assert client.post(f"/api/v1/bookings/{booking_id}/confirm-payment").status_code == status.HTTP_401_UNAUTHORIZED
+    for token in (owner_token, other_token, admin_token):
+        response = client.post(
+            f"/api/v1/bookings/{booking_id}/confirm-payment",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "trusted internal payment flow" in response.json()["detail"]
+
+
+def test_admin_privileged_confirmation_remains_supported(client, db_session):
+    _, admin_token = register_user(client, db_session, "admin_a2_privileged@example.com", UserRole.ADMIN)
+    _, user_token = register_user(client, db_session, "user_a2_privileged@example.com")
+    court_id = create_court(client, db_session, admin_token)
+    start_t = get_aligned_future_datetime(days_offset=8)
+    hold = client.post(
+        "/api/v1/bookings/hold",
+        json={"court_id": court_id, "start_time": start_t.isoformat(), "end_time": (start_t + timedelta(hours=1)).isoformat()},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    response = client.patch(
+        f"/api/v1/bookings/{hold.json()['id']}/status",
+        json={"status": "confirmed"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == BookingStatus.CONFIRMED
+
+
+@pytest.mark.parametrize(
+    "booking_status",
+    [
+        BookingStatus.CONFIRMED,
+        BookingStatus.CANCELLED,
+        BookingStatus.EXPIRED,
+        BookingStatus.COMPLETED,
+        BookingStatus.REFUNDED,
+    ],
+)
+def test_trusted_confirmation_rejects_invalid_lifecycle(client, db_session, booking_status):
+    from app.models.booking import Booking
+
+    _, admin_token = register_user(client, db_session, f"admin_a2_{booking_status.value}@example.com", UserRole.ADMIN)
+    _, user_token = register_user(client, db_session, f"user_a2_{booking_status.value}@example.com")
+    court_id = create_court(client, db_session, admin_token)
+    start_t = get_aligned_future_datetime(days_offset=9)
+    hold = client.post(
+        "/api/v1/bookings/hold",
+        json={"court_id": court_id, "start_time": start_t.isoformat(), "end_time": (start_t + timedelta(hours=1)).isoformat()},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    booking = db_session.get(Booking, hold.json()["id"])
+    booking.status = booking_status
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        confirm_booking_after_verified_payment(db_session, booking.id)
+    assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert booking_status.value in exc_info.value.detail
 
 
 # 8. pending_payment to cancelled succeeds
@@ -283,8 +356,9 @@ def test_expired_to_confirmed_fails(client, db_session):
     b.status = BookingStatus.EXPIRED
     db_session.commit()
 
-    r_conf = client.post(f"/api/v1/bookings/{b_id}/confirm-payment", headers=h_user)
-    assert r_conf.status_code == status.HTTP_400_BAD_REQUEST
+    with pytest.raises(HTTPException) as exc_info:
+        confirm_booking_after_verified_payment(db_session, b_id)
+    assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
 # 11. cancelled to confirmed fails
@@ -300,8 +374,9 @@ def test_cancelled_to_confirmed_fails(client, db_session):
 
     client.post(f"/api/v1/bookings/{b_id}/cancel-hold", headers=h_user)
 
-    r_conf = client.post(f"/api/v1/bookings/{b_id}/confirm-payment", headers=h_user)
-    assert r_conf.status_code == status.HTTP_400_BAD_REQUEST
+    with pytest.raises(HTTPException) as exc_info:
+        confirm_booking_after_verified_payment(db_session, b_id)
+    assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
 # 12. Client cannot set arbitrary booking status
@@ -333,7 +408,7 @@ def test_confirmed_booking_blocks_availability(client, db_session):
     h1 = {"Authorization": f"Bearer {u1_token}"}
     r1 = client.post("/api/v1/bookings/hold", json={"court_id": court_id, "start_time": start_t.isoformat(), "end_time": end_t.isoformat()}, headers=h1)
     b_id = r1.json()["id"]
-    client.post(f"/api/v1/bookings/{b_id}/confirm-payment", headers=h1)
+    confirm_booking_after_verified_payment(db_session, b_id)
 
     h2 = {"Authorization": f"Bearer {u2_token}"}
     r2 = client.post("/api/v1/bookings/hold", json={"court_id": court_id, "start_time": start_t.isoformat(), "end_time": end_t.isoformat()}, headers=h2)

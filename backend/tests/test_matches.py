@@ -35,13 +35,17 @@ def create_court(client, db_session, admin_token):
     return response.json()["id"]
 
 
-def confirmed_booking(client, court_id, token, offset=5):
+def confirmed_booking(client, court_id, token, admin_token, offset=5):
     start = (datetime.now(timezone.utc) + timedelta(days=offset)).replace(hour=10, minute=0, second=0, microsecond=0)
     headers = {"Authorization": f"Bearer {token}"}
     hold = client.post("/api/v1/bookings/hold", json={"court_id": court_id, "start_time": start.isoformat(), "end_time": (start + timedelta(hours=1)).isoformat()}, headers=headers)
     assert hold.status_code == status.HTTP_201_CREATED
     booking_id = hold.json()["id"]
-    confirmed = client.post(f"/api/v1/bookings/{booking_id}/confirm-payment", headers=headers)
+    confirmed = client.patch(
+        f"/api/v1/bookings/{booking_id}/status",
+        json={"status": "confirmed"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
     assert confirmed.status_code == status.HTTP_200_OK
     return booking_id
 
@@ -58,7 +62,7 @@ def setup_match(client, db_session, visibility="public", join_policy="open", max
     _, admin_token = register_user(client, db_session, f"match_admin{suffix}@example.com", UserRole.ADMIN)
     creator_id, creator_token = register_user(client, db_session, f"match_creator{suffix}@example.com")
     court_id = create_court(client, db_session, admin_token)
-    booking_id = confirmed_booking(client, court_id, creator_token)
+    booking_id = confirmed_booking(client, court_id, creator_token, admin_token)
     response = create_match(client, booking_id, creator_token, visibility=visibility, join_policy=join_policy, max_players=max_players)
     return creator_id, creator_token, court_id, booking_id, response.json()
 
@@ -76,7 +80,7 @@ def test_match_creation_rejects_other_booking_and_duplicate(client, db_session):
     _, admin_token = register_user(client, db_session, "other_admin@example.com", UserRole.ADMIN)
     _, creator_token = register_user(client, db_session, "booking_owner@example.com")
     _, other_token = register_user(client, db_session, "other_player@example.com")
-    booking_id = confirmed_booking(client, create_court(client, db_session, admin_token), creator_token)
+    booking_id = confirmed_booking(client, create_court(client, db_session, admin_token), creator_token, admin_token)
     denied = client.post("/api/v1/matches", json={"booking_id": booking_id, "title": "Not mine", "min_players": 2, "max_players": 4}, headers={"Authorization": f"Bearer {other_token}"})
     assert denied.status_code == status.HTTP_403_FORBIDDEN
     create_match(client, booking_id, creator_token)
@@ -217,7 +221,7 @@ def test_create_ignores_server_owned_fields_and_court_owner_isolated(client, db_
     court_id = create_court(client, db_session, admin_token)
     db_session.get(Court, court_id).owner_id = owner_id
     db_session.commit()
-    booking_id = confirmed_booking(client, court_id, creator_token)
+    booking_id = confirmed_booking(client, court_id, creator_token, admin_token)
     response = client.post("/api/v1/matches", json={
         "booking_id": booking_id, "title": "Protected", "min_players": 2, "max_players": 4,
         "creator_id": owner_id, "court_id": 999, "status": "cancelled", "start_time": "2030-01-01T00:00:00Z",
@@ -241,7 +245,7 @@ def test_creation_rejects_pending_booking_and_inactive_court(client, db_session)
     rejected = client.post("/api/v1/matches", json={"booking_id": pending.json()["id"], "title": "Pending", "min_players": 2, "max_players": 4}, headers=headers)
     assert rejected.status_code == status.HTTP_409_CONFLICT
     inactive_court = create_court(client, db_session, admin_token)
-    inactive_booking = confirmed_booking(client, inactive_court, creator_token)
+    inactive_booking = confirmed_booking(client, inactive_court, creator_token, admin_token)
     db_session.get(Court, inactive_court).is_active = False
     db_session.commit()
     inactive = client.post("/api/v1/matches", json={"booking_id": inactive_booking, "title": "Inactive", "min_players": 2, "max_players": 4}, headers=headers)

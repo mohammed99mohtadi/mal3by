@@ -18,7 +18,6 @@ from app.schemas.booking import (
     BookingHoldCreate,
     BookingHoldStatusResponse,
     BookingListItem,
-    BookingPaymentConfirm,
     BookingRead,
     BookingStatusUpdate,
 )
@@ -57,7 +56,6 @@ __all__ = [
     "BookingCreate",
     "BookingHoldCreate",
     "BookingHoldStatusResponse",
-    "BookingPaymentConfirm",
     "BookingCancel",
     "BookingStatusUpdate",
     "BookingRead",
@@ -86,4 +84,3 @@ __all__ = [
     "BookingPriceQuoteRequest",
     "BookingPriceQuoteResponse",
 ]
-

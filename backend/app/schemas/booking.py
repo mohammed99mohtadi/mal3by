@@ -52,10 +52,6 @@ class BookingStatusUpdate(BaseModel):
     cancellation_reason: str | None = Field(default=None, max_length=255)
 
 
-class BookingPaymentConfirm(BaseModel):
-    payment_reference: str | None = Field(default=None, max_length=100)
-
-
 class BookingHoldStatusResponse(BaseModel):
     booking_id: int
     status: BookingStatus

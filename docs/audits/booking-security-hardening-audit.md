@@ -10,7 +10,7 @@ Scope: read-only repository audit; documentation is the only output.
 
 The existing functional baseline is healthy: the backend suite passes and Alembic has one head. Authorization checks are generally explicit, booking prices are calculated server-side and snapshotted, private-match visibility has dedicated tests, and the frontend stores the access token in an HttpOnly cookie rather than browser storage.
 
-At audit baseline, availability was checked in application code before an unconstrained insert, so concurrent requests could hold the same court interval. A1 now implements a PostgreSQL exclusion constraint and safe conflict mapping, but isolated PostgreSQL validation remains pending. The booking path is therefore not cleared for public concurrent traffic yet. Separately, an authenticated booking owner can call `confirm-payment` and create a confirmed booking without evidence from a payment provider. Production configuration also has unsafe fallbacks, abuse controls are absent, and no verified backup/restore process is documented.
+At audit baseline, availability was checked in application code before an unconstrained insert, so concurrent requests could hold the same court interval. A1 now implements a PostgreSQL exclusion constraint and safe conflict mapping, but isolated PostgreSQL validation remains pending. A2 removes public self-confirmation and makes confirmation server-authoritative. Production configuration still has unsafe fallbacks, abuse controls are absent, and no verified backup/restore process is documented.
 
 Severity totals: **Critical 0, High 5, Medium 8, Low 4, Informational 2**.
 
@@ -56,6 +56,19 @@ Deployment order: confirm backup and restore readiness; persist expired-hold cle
 
 Rollback: stop booking writes if correctness is uncertain; downgrade one revision to drop only the exclusion constraint; keep shared `btree_gist`; roll back application if needed. Downgrade restores prior race risk and does not repair data, so use only with explicit approval.
 
+## A2 implementation update — 2026-08-01
+
+Status: **implemented**.
+
+- `POST /api/v1/bookings/{booking_id}/confirm-payment` cannot confirm: anonymous requests receive 401 and every authenticated caller receives a safe 403. Booking ownership is never confirmation authority.
+- Existing privileged status workflows remain authoritative: court owners may manage bookings on their own courts and admins may manage supported bookings.
+- `confirm_booking_after_verified_payment()` is an internal-only extension point with no HTTP route. A future caller must first verify provider authenticity, amount, currency, and replay safety; no payment feature is faked here.
+- Privileged and internal confirmation share one state validator. Only `pending` or `pending_payment` may become `confirmed`; elapsed holds become `expired`. Confirmed, cancelled, expired, completed, rejected, and refunded bookings cannot be confirmed.
+- Missing bookings remain 404, permission failures 403, invalid lifecycle 400, database conflicts 409, and unexpected SQLAlchemy failures 500. Fixed domain text prevents SQL leakage.
+- No schema migration, frontend change, payment provider, notification, or match/community logic change was introduced.
+- Remaining payment work: payment attempt/event persistence, signed-webhook verification, amount/currency comparison, provider-event uniqueness, idempotency, reconciliation, and refunds.
+- Remaining lifecycle work: row locking or optimistic versioning for confirm/cancel/expire races and PostgreSQL race tests. Authority hardening does not solve those transaction races.
+
 ## Baseline and environment safety
 
 | Check | Result |
@@ -79,7 +92,7 @@ Active conflict statuses are `pending`, `pending_payment`, and `confirmed`. Term
 | Transition | Actor and preconditions | Writes / transaction | Existing coverage | Gap |
 |---|---|---|---|---|
 | create → `pending_payment` | Authenticated user; active court; timezone, future, duration, hours, closure, buffer, overlap rules pass | Price snapshot, hold expiry and timestamps inserted; service commits | Valid hold, validation, price snapshot, sequential overlap | No concurrency lock/constraint; public backend schema permits client-selected 1–60 minute hold |
-| `pending(_payment)` → `confirmed` | Booking user, court owner, or admin; hold not expired | Status and confirmation timestamps; service commits | Success, expired/cancelled rejection | No payment proof, row lock, idempotency, or amount verification |
+| `pending(_payment)` → `confirmed` | Trusted internal payment caller, court owner, or admin; hold not expired | Shared validator writes status and confirmation timestamps; service commits | Public denial, trusted/privileged success, terminal-state rejection | Payment persistence/verification, row lock, idempotency, and amount verification remain |
 | `pending(_payment)` → `cancelled` | Booking user, court owner, or admin | Status, reason, timestamp; service commits | Own/other-user checks and lifecycle success | Repeated cancellation is an error; no stable event/audit record |
 | `confirmed` → `cancelled` | Booking user, court owner, or admin | Same writes; service commits | Permission and transition tests | No cancellation cutoff, refund coordination, race protection, or notification |
 | `pending(_payment)` → `expired` | Lazy reads/availability cleanup, admin cleanup, or owner/admin status patch | Status and expiry timestamps; cleanup only flushes unless caller later commits | Expired availability, hold status, admin authorization | Cleanup endpoint does not commit; expiry/confirmation race is unlocked |
@@ -93,7 +106,7 @@ Rescheduling and changing court/time are unsupported. Keep them unsupported unti
 
 ## Double-booking analysis
 
-At audit time protection was **service-enforced only**. A1 now adds the PostgreSQL exclusion constraint described above while preserving the early service check. The overlap query still reads all active bookings for a court and checks times in Python. Booking confirmation/lifecycle updates still do not use `FOR UPDATE`; those races remain A2 scope.
+At audit time protection was **service-enforced only**. A1 now adds the PostgreSQL exclusion constraint described above while preserving the early service check. The overlap query still reads all active bookings for a court and checks times in Python. A2 hardens confirmation authority and state validation, but lifecycle updates still do not use `FOR UPDATE`; those races remain follow-up scope.
 
 | Race | Current protection | Classification | Outcome |
 |---|---|---|---|
@@ -170,7 +183,7 @@ No CORS middleware is configured. Same-origin frontend proxying reduces browser 
 | Users/admin | `/me` authenticated; role mutation admin-only; final-admin demotion protected | Good tested baseline; registration enumeration remains |
 | Courts/owner | Owner role plus per-court ownership; admin override in services | Cross-owner tests exist; deletion semantics threaten history |
 | Pricing/availability writes | Authenticated owner of court or admin | Cross-owner/player tests exist; concurrent closure/hold remains |
-| Bookings | Object read/cancel/confirm: booking user, court owner, admin; status writes court owner/admin | Guessed IDs yield 403 and disclose existence; more importantly user self-confirms payment |
+| Bookings | Object read/cancel: booking user, court owner, admin; confirmation/status writes court owner/admin or trusted internal flow | Guessed IDs can still disclose existence; public self-confirmation is closed by A2 |
 | Matches/private data | Auth required; private view requires manager, active/pending participant, or invite path | Private visibility tests exist; numeric-ID stranger and invite flows covered |
 | Join requests | Request owner can withdraw; creator/admin manages; expected match ID checked; private creation guarded | Strong service tests, including relationship revalidation and lock sequence |
 | Reviews | Reviewer manages own review; court owner manages response; admin moderates | Cross-owner and own-booking tests exist; spam throttling absent |
@@ -222,7 +235,7 @@ No repository evidence establishes automated PostgreSQL backups, retention, RPO/
 | ID | Severity | Title | Affected files | Failure/impact | Fix and required tests | Blocks new features? |
 |---|---|---|---|---|---|---|
 | BSH-001 | High | Active interval overlap invariant implemented; PostgreSQL validation pending | booking service and `c3d4e5f6a7b8` migration | Constraint design prevents concurrent active overlaps, but isolated PostgreSQL execution is not yet proven | Run opt-in PostgreSQL upgrade/concurrency/downgrade/upgrade tests; keep A2 lifecycle races separate | Yes until PostgreSQL validation passes |
-| BSH-002 | High | User can self-confirm “payment” | booking endpoint/service/schema; frontend confirm | Any booking owner can mark unpaid hold confirmed | Remove public trust path; provider-verified, idempotent state machine; forged/duplicate/webhook tests | Yes: payments |
+| BSH-002 | High | User can self-confirm “payment” — remediated by A2 | booking endpoint/service/schema | Public route now rejects all authenticated callers; privileged/internal authority only | Payment persistence, verified webhook, idempotency, and replay tests remain | Yes: payments |
 | BSH-003 | High | Unsafe production configuration fallbacks | `core/config.py` | Missing env may activate known fallback signing secret and debug mode | Fail closed outside test/dev; secret strength/rotation checks; startup configuration tests | Yes: public launch |
 | BSH-004 | High | No rate limits or active-hold quota | auth, bookings, matches, reviews | Credential attacks, inventory denial, spam and expensive-query abuse | Layered IP/account limits, server TTL, quota, 429 tests | Yes: public launch |
 | BSH-005 | High | Backup and restore readiness unverified | operations/deployment docs absent | Data loss cannot be bounded or recovered confidently | Verify automated backups, retention, RPO/RTO and test restore | Yes: real payments |

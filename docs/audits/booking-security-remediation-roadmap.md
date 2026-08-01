@@ -22,12 +22,20 @@ This roadmap splits the audit findings into reviewable units. Each unit must pre
 
 **Rollback:** Stop booking writes, downgrade one revision to remove constraint, retain shared `btree_gist`, then restore app only if needed. This reopens race; never treat downgrade as data repair.
 
+## A2 — secure booking confirmation
+
+**Implementation status (2026-08-01): IMPLEMENTED.** Public `confirm-payment` requests cannot mutate booking state: anonymous callers receive 401 and authenticated callers receive 403, including booking owners. Existing court-owner/admin status workflows remain supported. Privileged confirmation and internal `confirm_booking_after_verified_payment()` use one strict lifecycle validator and safe database error mapping. No payment provider or webhook is implemented.
+
+**Future payment integration:** A verified webhook/service must authenticate provider messages, validate amount and currency against booking snapshot, reject replays through durable unique event/idempotency records, and call internal confirmation transactionally. Until then, no normal user path can confirm.
+
+**Remaining concurrency work:** Confirmation authority is hardened, but confirm/cancel/expire row locking or optimistic versioning and PostgreSQL race tests remain required before payments. No migration was needed for this unit.
+
 ## Ordered units
 
 | Unit | Scope | Likely changes / migration | Tests and exit criteria | Risk |
 |---|---|---|---|---|
 | A1 | Concurrent hold invariant — implemented, PostgreSQL validation pending | Booking service; migration `c3d4e5f6a7b8`; opt-in tests | Static upgrade/downgrade valid; isolated PostgreSQL race run still required | High |
-| A2 | Locked lifecycle transitions | Confirm, cancel, expire; row lock or optimistic version; possibly version column migration | Confirm-vs-expire/cancel races; deterministic idempotent retry | High |
+| A2 | Secure booking confirmation — implemented; concurrency follow-up remains | Public confirmation denial; shared privileged/internal validator; no migration | Owner/anonymous/other denial; privileged/internal success; invalid-state rejection | High |
 | B1 | Cleanup transaction ownership | Cleanup service/endpoint/job boundary; no migration expected | Expirations persist in fresh session; failure rolls back | Medium |
 | B2 | Cancellation/completion policy | Policy module/service, schemas, timestamps/events | Cutoff boundaries, end-time completion, actor matrix | Medium |
 | B3 | Rescheduling decision | Design record first; later replacement workflow | Old/new slot atomicity and payment-delta cases | High; defer until payment model |
