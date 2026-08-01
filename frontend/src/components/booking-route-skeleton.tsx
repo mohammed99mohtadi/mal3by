@@ -1,0 +1,3 @@
+import { Skeleton } from "@/components/ui/skeleton";
+import { Surface } from "@/components/ui/surface";
+export function BookingRouteSkeleton({cards=3}:{cards?:number}){return <section className="page-wrap" role="status" aria-live="polite" aria-label="Loading / جارٍ التحميل"><Skeleton variant="text" className="h-8 max-w-xs"/><Skeleton variant="text" className="mt-3 max-w-lg"/><div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{Array.from({length:cards},(_,i)=><Surface key={i}><Skeleton className="aspect-[16/7] w-full"/><Skeleton variant="text" className="mt-5 w-2/3"/><Skeleton variant="text" className="mt-3 w-1/2"/></Surface>)}</div></section>}
