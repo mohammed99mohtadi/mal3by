@@ -13,10 +13,16 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
+from fastapi import HTTPException
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
+
+from app.models.user import User
+from app.services.availability_service import expire_outdated_holds
+from app.services.booking_service import cancel_booking, confirm_booking_after_verified_payment
 
 
 POSTGRES_URL = os.getenv("MAL3BY_TEST_POSTGRES_URL")
@@ -127,6 +133,41 @@ def _future_interval():
     return start, start + timedelta(hours=1)
 
 
+def _lifecycle_booking(postgres_engine, booking_domain, *, expired=False):
+    start, end = _future_interval()
+    hold_expires_at = datetime.now(timezone.utc) + timedelta(minutes=-1 if expired else 10)
+    with postgres_engine.begin() as connection:
+        booking_id = _insert_booking(
+            connection,
+            booking_domain.user_ids[0],
+            booking_domain.court_ids[0],
+            start,
+            end,
+            "pending_payment",
+        )
+        connection.execute(
+            text("UPDATE bookings SET hold_expires_at = :expires WHERE id = :booking_id"),
+            {"expires": hold_expires_at, "booking_id": booking_id},
+        )
+    return booking_id
+
+
+def _run_lifecycle_race(postgres_engine, actions):
+    barrier = Barrier(len(actions))
+    SessionLocal = sessionmaker(bind=postgres_engine, expire_on_commit=False)
+
+    def run(action):
+        with SessionLocal() as session:
+            barrier.wait(timeout=10)
+            try:
+                return action(session)
+            except HTTPException as exc:
+                return f"error:{exc.status_code}"
+
+    with ThreadPoolExecutor(max_workers=len(actions)) as executor:
+        return list(executor.map(run, actions))
+
+
 @pytest.mark.parametrize("active_status", ACTIVE_STATUSES)
 def test_active_booking_blocks_overlap(postgres_engine, booking_domain, active_status):
     start, end = _future_interval()
@@ -214,3 +255,72 @@ def test_concurrent_overlapping_holds_allow_one_commit(postgres_engine, booking_
             {"court_id": booking_domain.court_ids[0]},
         ).scalar_one()
     assert active_count == 1
+
+
+def test_concurrent_confirm_and_cancel_allow_one_transition(postgres_engine, booking_domain):
+    booking_id = _lifecycle_booking(postgres_engine, booking_domain)
+
+    def confirm(session):
+        return confirm_booking_after_verified_payment(session, booking_id).status.value
+
+    def cancel(session):
+        user = session.get(User, booking_domain.user_ids[0])
+        return cancel_booking(session, booking_id, user).status.value
+
+    results = _run_lifecycle_race(postgres_engine, [confirm, cancel])
+    assert sorted(results) in (
+        ["cancelled", "confirmed"],
+        ["cancelled", "error:400"],
+    )
+    with postgres_engine.connect() as connection:
+        final_status = connection.execute(text("SELECT status FROM bookings WHERE id = :id"), {"id": booking_id}).scalar_one()
+    assert final_status == "cancelled"
+
+
+@pytest.mark.parametrize("operation", ("confirm", "cancel"))
+def test_duplicate_lifecycle_request_allows_one_transition(postgres_engine, booking_domain, operation):
+    booking_id = _lifecycle_booking(postgres_engine, booking_domain)
+
+    def action(session):
+        if operation == "confirm":
+            return confirm_booking_after_verified_payment(session, booking_id).status.value
+        user = session.get(User, booking_domain.user_ids[0])
+        return cancel_booking(session, booking_id, user).status.value
+
+    results = _run_lifecycle_race(postgres_engine, [action, action])
+    assert sorted(results) == ["error:400", "confirmed" if operation == "confirm" else "cancelled"]
+
+
+def test_cleanup_and_confirm_leave_expired_state(postgres_engine, booking_domain):
+    booking_id = _lifecycle_booking(postgres_engine, booking_domain, expired=True)
+
+    def confirm(session):
+        confirm_booking_after_verified_payment(session, booking_id)
+        return "confirmed"
+
+    def cleanup(session):
+        expire_outdated_holds(session)
+        return "cleanup"
+
+    results = _run_lifecycle_race(postgres_engine, [confirm, cleanup])
+    assert "confirmed" not in results
+    with postgres_engine.connect() as connection:
+        final_status = connection.execute(text("SELECT status FROM bookings WHERE id = :id"), {"id": booking_id}).scalar_one()
+    assert final_status == "expired"
+
+
+def test_cleanup_and_cancel_leave_one_terminal_state(postgres_engine, booking_domain):
+    booking_id = _lifecycle_booking(postgres_engine, booking_domain, expired=True)
+
+    def cancel(session):
+        user = session.get(User, booking_domain.user_ids[0])
+        return cancel_booking(session, booking_id, user).status.value
+
+    def cleanup(session):
+        expire_outdated_holds(session)
+        return "cleanup"
+
+    _run_lifecycle_race(postgres_engine, [cancel, cleanup])
+    with postgres_engine.connect() as connection:
+        final_status = connection.execute(text("SELECT status FROM bookings WHERE id = :id"), {"id": booking_id}).scalar_one()
+    assert final_status in ("cancelled", "expired")

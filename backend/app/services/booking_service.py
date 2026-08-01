@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from typing import NoReturn
 from fastapi import HTTPException, status
 from sqlalchemy import select, or_, and_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -20,6 +21,8 @@ BOOKING_CONFIRMATION_FORBIDDEN_DETAIL = (
 )
 BOOKING_CONFIRMATION_CONFLICT_DETAIL = "Booking confirmation could not be completed because of a database conflict."
 BOOKING_CONFIRMATION_INTERNAL_DETAIL = "Booking confirmation could not be completed."
+BOOKING_LIFECYCLE_CONFLICT_DETAIL = "Booking state changed during this operation. Please retry."
+BOOKING_LIFECYCLE_INTERNAL_DETAIL = "Booking lifecycle operation could not be completed."
 
 ALLOWED_TRANSITIONS = {
     BookingStatus.PENDING_PAYMENT: {
@@ -50,7 +53,21 @@ ALLOWED_TRANSITIONS = {
 }
 
 
-def get_booking_by_id(db: Session, booking_id: int) -> Booking | None:
+def _raise_lifecycle_error(db: Session, status_code: int, detail: str) -> NoReturn:
+    db.rollback()
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
+def get_booking_by_id(db: Session, booking_id: int, *, lock: bool = False) -> Booking | None:
+    if lock:
+        statement = (
+            select(Booking)
+            .where(Booking.id == booking_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return db.execute(statement).scalar_one_or_none()
+
     statement = (
         select(Booking)
         .options(
@@ -146,12 +163,9 @@ def get_hold_status(
     booking_id: int,
     current_user: User,
 ) -> BookingHoldStatusResponse:
-    booking = get_booking_by_id(db, booking_id)
+    booking = get_booking_by_id(db, booking_id, lock=True)
     if not booking:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Booking with id {booking_id} not found",
-        )
+        _raise_lifecycle_error(db, status.HTTP_404_NOT_FOUND, f"Booking with id {booking_id} not found")
 
     # Authorization check
     is_owner = booking.user_id == current_user.id
@@ -159,10 +173,7 @@ def get_hold_status(
     is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
 
     if not (is_owner or is_court_owner or is_admin):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to view this hold status",
-        )
+        _raise_lifecycle_error(db, status.HTTP_403_FORBIDDEN, "You do not have permission to view this hold status")
 
     now_utc = datetime.now(timezone.utc)
     cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
@@ -174,8 +185,7 @@ def get_hold_status(
             booking.status = BookingStatus.EXPIRED
             booking.expired_at = now_utc
             booking.status_updated_at = now_utc
-            db.commit()
-            db.refresh(booking)
+            _commit_lifecycle_change(db, booking)
             cur_status = BookingStatus.EXPIRED
 
     is_expired = cur_status == BookingStatus.EXPIRED
@@ -202,29 +212,20 @@ def cancel_user_hold(
     current_user: User,
     reason: str | None = None,
 ) -> Booking:
-    booking = get_booking_by_id(db, booking_id)
+    booking = get_booking_by_id(db, booking_id, lock=True)
     if not booking:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Booking with id {booking_id} not found",
-        )
+        _raise_lifecycle_error(db, status.HTTP_404_NOT_FOUND, f"Booking with id {booking_id} not found")
 
     is_owner = booking.user_id == current_user.id
     is_court_owner = booking.court and booking.court.owner_id == current_user.id
     is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
 
     if not (is_owner or is_court_owner or is_admin):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to cancel this hold",
-        )
+        _raise_lifecycle_error(db, status.HTTP_403_FORBIDDEN, "You do not have permission to cancel this hold")
 
     cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
     if cur_status not in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot cancel hold in {cur_status.value} status",
-        )
+        _raise_lifecycle_error(db, status.HTTP_400_BAD_REQUEST, f"Cannot cancel hold in {cur_status.value} status")
 
     now_utc = datetime.now(timezone.utc)
     booking.status = BookingStatus.CANCELLED
@@ -232,8 +233,7 @@ def cancel_user_hold(
     booking.cancellation_reason = reason or "User cancelled hold"
     booking.status_updated_at = now_utc
 
-    db.commit()
-    db.refresh(booking)
+    _commit_lifecycle_change(db, booking)
     return get_booking_by_id(db, booking.id)
 
 
@@ -254,7 +254,13 @@ def reject_untrusted_booking_confirmation(
     )
 
 
-def _commit_confirmation_change(db: Session, booking: Booking) -> None:
+def _commit_lifecycle_change(
+    db: Session,
+    booking: Booking,
+    *,
+    conflict_detail: str = BOOKING_LIFECYCLE_CONFLICT_DETAIL,
+    internal_detail: str = BOOKING_LIFECYCLE_INTERNAL_DETAIL,
+) -> None:
     try:
         db.commit()
         db.refresh(booking)
@@ -262,13 +268,13 @@ def _commit_confirmation_change(db: Session, booking: Booking) -> None:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=BOOKING_CONFIRMATION_CONFLICT_DETAIL,
+            detail=conflict_detail,
         ) from exc
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=BOOKING_CONFIRMATION_INTERNAL_DETAIL,
+            detail=internal_detail,
         ) from exc
 
 
@@ -279,9 +285,10 @@ def _confirm_booking(db: Session, booking: Booking) -> Booking:
     cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
 
     if cur_status not in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot confirm payment for booking in {cur_status.value} status",
+        _raise_lifecycle_error(
+            db,
+            status.HTTP_400_BAD_REQUEST,
+            f"Cannot confirm payment for booking in {cur_status.value} status",
         )
 
     # Check if expired
@@ -290,7 +297,12 @@ def _confirm_booking(db: Session, booking: Booking) -> Booking:
         booking.status = BookingStatus.EXPIRED
         booking.expired_at = now_utc
         booking.status_updated_at = now_utc
-        _commit_confirmation_change(db, booking)
+        _commit_lifecycle_change(
+            db,
+            booking,
+            conflict_detail=BOOKING_CONFIRMATION_CONFLICT_DETAIL,
+            internal_detail=BOOKING_CONFIRMATION_INTERNAL_DETAIL,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Reservation hold has expired and cannot be confirmed.",
@@ -301,7 +313,12 @@ def _confirm_booking(db: Session, booking: Booking) -> Booking:
     booking.confirmed_at = now_utc
     booking.status_updated_at = now_utc
 
-    _commit_confirmation_change(db, booking)
+    _commit_lifecycle_change(
+        db,
+        booking,
+        conflict_detail=BOOKING_CONFIRMATION_CONFLICT_DETAIL,
+        internal_detail=BOOKING_CONFIRMATION_INTERNAL_DETAIL,
+    )
     return get_booking_by_id(db, booking.id)
 
 
@@ -312,12 +329,9 @@ def confirm_booking_after_verified_payment(db: Session, booking_id: int) -> Book
     code must verify provider authenticity, amount, currency, and replay safety
     before calling it.
     """
-    booking = get_booking_by_id(db, booking_id)
+    booking = get_booking_by_id(db, booking_id, lock=True)
     if not booking:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Booking with id {booking_id} not found",
-        )
+        _raise_lifecycle_error(db, status.HTTP_404_NOT_FOUND, f"Booking with id {booking_id} not found")
     return _confirm_booking(db, booking)
 
 
@@ -401,53 +415,53 @@ def list_court_bookings(
 
 def cancel_booking(
     db: Session,
-    booking: Booking,
+    booking_id: int,
     current_user: User,
     reason: str | None = None,
 ) -> Booking:
+    booking = get_booking_by_id(db, booking_id, lock=True)
+    if not booking:
+        _raise_lifecycle_error(db, status.HTTP_404_NOT_FOUND, f"Booking with id {booking_id} not found")
     is_booking_owner = booking.user_id == current_user.id
     is_court_owner = booking.court and booking.court.owner_id == current_user.id
     is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
 
     if not (is_booking_owner or is_court_owner or is_admin):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to cancel this booking",
-        )
+        _raise_lifecycle_error(db, status.HTTP_403_FORBIDDEN, "You do not have permission to cancel this booking")
 
     cur_status = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
     valid_next = ALLOWED_TRANSITIONS.get(cur_status, set())
     if BookingStatus.CANCELLED not in valid_next and cur_status not in [BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING, BookingStatus.CONFIRMED]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot cancel booking in {cur_status.value} status.",
-        )
+        _raise_lifecycle_error(db, status.HTTP_400_BAD_REQUEST, f"Cannot cancel booking in {cur_status.value} status.")
 
     now_utc = datetime.now(timezone.utc)
     booking.status = BookingStatus.CANCELLED
     booking.cancellation_reason = reason
     booking.cancelled_at = now_utc
     booking.status_updated_at = now_utc
-    db.commit()
-    db.refresh(booking)
+    _commit_lifecycle_change(db, booking)
     return get_booking_by_id(db, booking.id)
 
 
 def update_booking_status(
     db: Session,
-    booking: Booking,
+    booking_id: int,
     status_update: BookingStatusUpdate,
     current_user: User,
 ) -> Booking:
+    booking = get_booking_by_id(db, booking_id, lock=True)
+    if not booking:
+        _raise_lifecycle_error(db, status.HTTP_404_NOT_FOUND, f"Booking with id {booking_id} not found")
     new_status = status_update.status
 
     is_court_owner = booking.court and booking.court.owner_id == current_user.id
     is_admin = current_user.role == UserRole.ADMIN or current_user.is_admin
 
     if not (is_court_owner or is_admin):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators or court owners can update booking status.",
+        _raise_lifecycle_error(
+            db,
+            status.HTTP_403_FORBIDDEN,
+            "Only administrators or court owners can update booking status.",
         )
 
     cur_status_enum = BookingStatus(booking.status) if isinstance(booking.status, str) else booking.status
@@ -455,9 +469,10 @@ def update_booking_status(
 
     valid_next_statuses = ALLOWED_TRANSITIONS.get(cur_status_enum, set())
     if new_status_enum not in valid_next_statuses:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status transition from {cur_status_enum.value} to {new_status_enum.value}",
+        _raise_lifecycle_error(
+            db,
+            status.HTTP_400_BAD_REQUEST,
+            f"Invalid status transition from {cur_status_enum.value} to {new_status_enum.value}",
         )
 
     if new_status_enum == BookingStatus.CONFIRMED:
@@ -480,6 +495,5 @@ def update_booking_status(
     elif new_status_enum == BookingStatus.REFUNDED and not booking.refunded_at:
         booking.refunded_at = now_utc
 
-    db.commit()
-    db.refresh(booking)
+    _commit_lifecycle_change(db, booking)
     return get_booking_by_id(db, booking.id)

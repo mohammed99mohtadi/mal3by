@@ -69,6 +69,19 @@ Status: **implemented**.
 - Remaining payment work: payment attempt/event persistence, signed-webhook verification, amount/currency comparison, provider-event uniqueness, idempotency, reconciliation, and refunds.
 - Remaining lifecycle work: row locking or optimistic versioning for confirm/cancel/expire races and PostgreSQL race tests. Authority hardening does not solve those transaction races.
 
+## A3 implementation update — 2026-08-01
+
+Status: **implemented, PostgreSQL validation pending**.
+
+- Every confirmation, cancellation, privileged status update, lazy hold expiration, and cleanup candidate now locks its booking row with `SELECT ... FOR UPDATE` before authorization and transition validation. Locked reads refresh existing ORM state, so a waiter validates the winner's committed status instead of stale state.
+- Cleanup locks eligible rows with `SKIP LOCKED`, updates only rows it owns, and commits or rolls back as one transaction. Cleanup no longer relies on a later caller commit.
+- Lifecycle services now receive booking IDs and acquire locks internally; endpoints cannot pass stale preloaded booking objects into writes.
+- Successful writes commit status and matching timestamps together. Database failures roll back. Invalid, duplicate, or losing operations roll back and return existing 400 domain errors; they never overwrite the winner.
+- Confirm versus expiry always leaves `expired` when hold deadline already passed. Confirm versus cancel and cleanup versus cancel serialize by lock; waiter reloads final state and either performs a still-valid transition or receives 400. Because confirmed-to-cancelled is valid, concurrent confirm then cancel may both succeed and ends cancelled. Duplicate confirm/cancel requests yield one success and one 400.
+- Retry after a rolled-back internal database failure reloads persisted state and can succeed safely. No request is reported successful without its transaction committing.
+- SQLite tests cover lifecycle validation and rollback/retry. Opt-in PostgreSQL tests use separate sessions and threads for confirm/cancel, duplicate operations, cleanup/confirm, and cleanup/cancel. They remain skipped unless an explicitly disposable PostgreSQL test database is enabled.
+- No migration was needed. PostgreSQL execution remains required to validate actual row-lock and `SKIP LOCKED` behavior; SQLite ignores row-lock clauses.
+
 ## Baseline and environment safety
 
 | Check | Result |
@@ -95,7 +108,7 @@ Active conflict statuses are `pending`, `pending_payment`, and `confirmed`. Term
 | `pending(_payment)` → `confirmed` | Trusted internal payment caller, court owner, or admin; hold not expired | Shared validator writes status and confirmation timestamps; service commits | Public denial, trusted/privileged success, terminal-state rejection | Payment persistence/verification, row lock, idempotency, and amount verification remain |
 | `pending(_payment)` → `cancelled` | Booking user, court owner, or admin | Status, reason, timestamp; service commits | Own/other-user checks and lifecycle success | Repeated cancellation is an error; no stable event/audit record |
 | `confirmed` → `cancelled` | Booking user, court owner, or admin | Same writes; service commits | Permission and transition tests | No cancellation cutoff, refund coordination, race protection, or notification |
-| `pending(_payment)` → `expired` | Lazy reads/availability cleanup, admin cleanup, or owner/admin status patch | Status and expiry timestamps; cleanup only flushes unless caller later commits | Expired availability, hold status, admin authorization | Cleanup endpoint does not commit; expiry/confirmation race is unlocked |
+| `pending(_payment)` → `expired` | Lazy reads/availability cleanup, admin cleanup, or owner/admin status patch | Locked row; status and expiry timestamps commit atomically | Expired availability, hold status, admin authorization, opt-in races | PostgreSQL execution still pending |
 | `pending(_payment)` → `rejected` | Court owner/admin through status update | Status and timestamp; service commits | General transition/permission coverage | No reason/event/notification requirement |
 | `confirmed` → `completed` | Court owner/admin through status update | Status and completed timestamp; service commits | Transition matrix coverage | No enforced end-time precondition found in booking service |
 | `confirmed`/`completed` → `refunded` | Court owner/admin through status update | Status and refunded timestamp; service commits | Transition matrix only | No provider refund, amount, reference, or reconciliation record |
@@ -106,14 +119,14 @@ Rescheduling and changing court/time are unsupported. Keep them unsupported unti
 
 ## Double-booking analysis
 
-At audit time protection was **service-enforced only**. A1 now adds the PostgreSQL exclusion constraint described above while preserving the early service check. The overlap query still reads all active bookings for a court and checks times in Python. A2 hardens confirmation authority and state validation, but lifecycle updates still do not use `FOR UPDATE`; those races remain follow-up scope.
+At audit time protection was **service-enforced only**. A1 adds the PostgreSQL exclusion constraint while preserving the early service check. A2 hardens confirmation authority. A3 locks lifecycle rows and makes cleanup transactional. PostgreSQL execution of both overlap and lifecycle concurrency tests remains pending.
 
 | Race | Current protection | Classification | Outcome |
 |---|---|---|---|
 | Two users hold same slot | Both run a read before either insert | Missing | Both can commit |
-| Two pending holds both confirm | Status/expiry checked independently | Missing | Both can become confirmed |
-| Expiry during confirmation | Wall-clock check, then unlocked write | Service-enforced | Last writer can win |
-| Cancellation vs confirmation | Independent read-modify-commit | Missing | Last commit can overwrite intent |
+| Duplicate confirmation | Row lock, fresh-state validation | Implemented; PostgreSQL validation pending | One confirms; loser receives 400 |
+| Expiry during confirmation | Same row lock plus deadline check | Implemented; PostgreSQL validation pending | Expired deadline cannot confirm |
+| Cancellation vs confirmation | Same row lock and transition matrix | Implemented; PostgreSQL validation pending | Operations serialize; valid confirmed-to-cancelled may follow confirm; stale overwrite blocked |
 | Closure vs hold creation | Separate unlocked transactions | Missing | Closure and hold may coexist |
 | Price changes between availability and hold | Hold recalculates and snapshots current server price | Database snapshot + service enforcement | Integrity is acceptable; displayed quote may change |
 | Concurrent final-slot requests | Same as simultaneous holds | Missing | Capacity/slot guarantee absent |
@@ -276,4 +289,4 @@ P1: cancellation cutoff/end-time/completion/refund policy, duplicate webhook/ide
 
 ## Release conclusion
 
-Normal non-booking feature development can continue if it does not deepen these risks. Public booking launch should wait for PostgreSQL validation of BSH-001 plus BSH-003 and BSH-004. Real payment acceptance should additionally wait for BSH-002, BSH-005, BSH-007 through BSH-009, and BSH-012. After A1 validation, next booking correctness unit is A2 locked lifecycle transitions.
+Normal non-booking feature development can continue if it does not deepen these risks. Public booking launch should wait for PostgreSQL validation of A1 and A3 plus BSH-003 and BSH-004. Real payment acceptance should additionally wait for BSH-002, BSH-005, BSH-007 through BSH-009, and BSH-012.

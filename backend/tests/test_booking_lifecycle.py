@@ -3,6 +3,7 @@ from decimal import Decimal
 import time
 import pytest
 from fastapi import HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.booking import BookingStatus
 from app.services.booking_service import confirm_booking_after_verified_payment
@@ -194,6 +195,37 @@ def test_pending_payment_to_confirmed_succeeds(client, db_session):
     b_id = r_hold.json()["id"]
 
     confirmed = confirm_booking_after_verified_payment(db_session, b_id)
+    assert confirmed.status == BookingStatus.CONFIRMED
+    assert confirmed.confirmed_at is not None
+
+
+def test_confirmation_retry_after_rollback_succeeds(client, db_session, monkeypatch):
+    _, admin_token = register_user(client, db_session, "admin_a3_retry@example.com", UserRole.ADMIN)
+    _, user_token = register_user(client, db_session, "user_a3_retry@example.com")
+    court_id = create_court(client, db_session, admin_token)
+    start_t = get_aligned_future_datetime(days_offset=10)
+    hold = client.post(
+        "/api/v1/bookings/hold",
+        json={"court_id": court_id, "start_time": start_t.isoformat(), "end_time": (start_t + timedelta(hours=1)).isoformat()},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    booking_id = hold.json()["id"]
+    real_commit = db_session.commit
+    attempts = 0
+
+    def fail_once():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise SQLAlchemyError("forced lifecycle rollback")
+        real_commit()
+
+    monkeypatch.setattr(db_session, "commit", fail_once)
+    with pytest.raises(HTTPException) as exc_info:
+        confirm_booking_after_verified_payment(db_session, booking_id)
+    assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    confirmed = confirm_booking_after_verified_payment(db_session, booking_id)
     assert confirmed.status == BookingStatus.CONFIRMED
     assert confirmed.confirmed_at is not None
 

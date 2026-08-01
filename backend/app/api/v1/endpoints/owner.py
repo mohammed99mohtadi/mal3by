@@ -489,7 +489,7 @@ def owner_update_booking_status(
         )
     return update_booking_status(
         db=db,
-        booking=booking,
+        booking_id=booking.id,
         status_update=status_in,
         current_user=current_user,
     )

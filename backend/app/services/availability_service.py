@@ -3,6 +3,7 @@ from decimal import Decimal
 import zoneinfo
 from fastapi import HTTPException, status
 from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from sqlalchemy.orm import Session
 
@@ -343,12 +344,17 @@ def is_court_closed_by_exception(
 
 
 def expire_outdated_holds(db: Session) -> int:
-    """Finds and expires unpaid holds whose hold_expires_at has passed."""
+    """Atomically lock and expire eligible holds, committing this cleanup unit."""
     now_utc = datetime.now(timezone.utc)
-    stmt = select(Booking).where(
-        Booking.status.in_([BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]),
-        Booking.hold_expires_at.is_not(None),
-        Booking.hold_expires_at <= now_utc,
+    stmt = (
+        select(Booking)
+        .where(
+            Booking.status.in_([BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING]),
+            Booking.hold_expires_at.is_not(None),
+            Booking.hold_expires_at <= now_utc,
+        )
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
     )
     expired_bookings = list(db.execute(stmt).scalars().all())
 
@@ -359,8 +365,11 @@ def expire_outdated_holds(db: Session) -> int:
         b.status_updated_at = now_utc
         count += 1
 
-    if count > 0:
-        db.flush()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     return count
 
 

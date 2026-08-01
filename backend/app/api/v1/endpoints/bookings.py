@@ -174,15 +174,8 @@ def cancel_my_booking(
     current_user: User = Depends(get_current_user),
 ):
     """Cancel an authenticated user's booking."""
-    booking = get_booking_by_id(db=db, booking_id=booking_id)
-    if not booking:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Booking with id {booking_id} not found",
-        )
-
     reason = cancel_in.cancellation_reason if cancel_in else None
-    return cancel_booking(db=db, booking=booking, current_user=current_user, reason=reason)
+    return cancel_booking(db=db, booking_id=booking_id, current_user=current_user, reason=reason)
 
 
 @router.patch("/{booking_id}/status", response_model=BookingRead)
@@ -193,16 +186,9 @@ def update_status(
     current_user: User = Depends(get_current_user),
 ):
     """Update booking status (Admin or Court Owner only)."""
-    booking = get_booking_by_id(db=db, booking_id=booking_id)
-    if not booking:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Booking with id {booking_id} not found",
-        )
-
     return update_booking_status(
         db=db,
-        booking=booking,
+        booking_id=booking_id,
         status_update=status_in,
         current_user=current_user,
     )

@@ -28,7 +28,17 @@ This roadmap splits the audit findings into reviewable units. Each unit must pre
 
 **Future payment integration:** A verified webhook/service must authenticate provider messages, validate amount and currency against booking snapshot, reject replays through durable unique event/idempotency records, and call internal confirmation transactionally. Until then, no normal user path can confirm.
 
-**Remaining concurrency work:** Confirmation authority is hardened, but confirm/cancel/expire row locking or optimistic versioning and PostgreSQL race tests remain required before payments. No migration was needed for this unit.
+**Concurrency follow-up:** Completed in A3 at implementation level; isolated PostgreSQL validation remains required.
+
+## A3 — booking race conditions
+
+**Implementation status (2026-08-01): IMPLEMENTED, POSTGRESQL VALIDATION PENDING.** Lifecycle operations lock booking rows before validation and commit state plus timestamps atomically. Cleanup uses locked candidates with `SKIP LOCKED` and owns its commit/rollback boundary. Stale endpoint objects no longer enter lifecycle writes.
+
+**Protected scenarios:** confirm versus expiry, confirm versus cancel, cleanup versus confirm, cleanup versus cancel, duplicate confirm, duplicate cancel, concurrent privileged/user actions, and retry after rollback. Operations serialize into one valid final state; later requests validate refreshed state, perform a still-valid next transition, or receive current 400 domain errors. Confirm followed by cancellation may both succeed because that sequence is valid.
+
+**Validation:** SQLite covers sequential state guarantees and retry after forced rollback. Opt-in PostgreSQL tests use separate sessions and concurrent threads. They require `MAL3BY_RUN_POSTGRES_TESTS=1` plus an explicitly disposable `MAL3BY_TEST_POSTGRES_URL`; execution remains pending in current environment.
+
+**Migration:** None. Guarantees depend on PostgreSQL row-lock semantics; SQLite remains functional-test coverage only.
 
 ## Ordered units
 
@@ -36,6 +46,7 @@ This roadmap splits the audit findings into reviewable units. Each unit must pre
 |---|---|---|---|---|
 | A1 | Concurrent hold invariant — implemented, PostgreSQL validation pending | Booking service; migration `c3d4e5f6a7b8`; opt-in tests | Static upgrade/downgrade valid; isolated PostgreSQL race run still required | High |
 | A2 | Secure booking confirmation — implemented; concurrency follow-up remains | Public confirmation denial; shared privileged/internal validator; no migration | Owner/anonymous/other denial; privileged/internal success; invalid-state rejection | High |
+| A3 | Booking lifecycle races — implemented, PostgreSQL validation pending | Locked lifecycle reads; transactional cleanup; no migration | Concurrent confirm/cancel/expiry/cleanup and duplicate-operation tests | High |
 | B1 | Cleanup transaction ownership | Cleanup service/endpoint/job boundary; no migration expected | Expirations persist in fresh session; failure rolls back | Medium |
 | B2 | Cancellation/completion policy | Policy module/service, schemas, timestamps/events | Cutoff boundaries, end-time completion, actor matrix | Medium |
 | B3 | Rescheduling decision | Design record first; later replacement workflow | Old/new slot atomicity and payment-delta cases | High; defer until payment model |
