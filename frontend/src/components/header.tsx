@@ -5,7 +5,7 @@ import { HeaderNav } from "./header-nav";
 
 export async function Header({ locale }: { locale: Locale }) {
   const token = (await cookies()).get("mal3by_session")?.value;
-  let userName: string | undefined;
-  if (token) { try { userName = (await api.me(token)).full_name; } catch { /* Cookie remains server-only; privileged links stay hidden. */ } }
-  return <HeaderNav locale={locale} isLoggedIn={Boolean(token)} userName={userName} />;
+  let user;
+  if (token) { try { user = await api.me(token); } catch { /* Cookie remains server-only; privileged links stay hidden. */ } }
+  return <HeaderNav locale={locale} isLoggedIn={Boolean(token)} userName={user?.full_name} role={user?.role} isAdmin={user?.is_admin} />;
 }

@@ -7,6 +7,7 @@ import { FeaturedCourtsSection } from "@/components/home/featured-courts-section
 import { HowItWorksSection } from "@/components/home/how-it-works-section";
 import { WhyMal3bySection } from "@/components/home/why-mal3by-section";
 import { FinalCtaSection } from "@/components/home/final-cta-section";
+import { ProductSections } from "@/components/home/product-sections";
 
 export default async function Home({
   params,
@@ -33,6 +34,7 @@ export default async function Home({
       <FeaturedCourtsSection locale={l} courts={courts} error={courtsError} />
       <HowItWorksSection locale={l} />
       <WhyMal3bySection locale={l} />
+      <ProductSections locale={l} courts={courts} />
       <FinalCtaSection locale={l} />
     </>
   );

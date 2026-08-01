@@ -26,9 +26,11 @@ describe("F2 navigation and layout", () => {
     expect(screen.queryByRole("link", { name: "Create account" })).toBeNull();
   });
 
-  it("does not expose unsupported Matches or Owner destinations", () => {
+  it("exposes community but hides role destinations without role", () => {
     render(<HeaderNav locale="en" isLoggedIn userName="Owner" />);
-    expect(screen.queryByRole("link", { name: /matches|community|owner/i })).toBeNull();
+    expect(screen.getByRole("link", { name: "Community" })).toHaveAttribute("href", "/en/community");
+    fireEvent.click(screen.getByLabelText("Open account menu"));
+    expect(screen.queryByRole("menuitem", { name: "Owner dashboard" })).toBeNull();
   });
 
   it("marks dynamic court route active", () => {
@@ -72,11 +74,13 @@ describe("F2 navigation and layout", () => {
     expect(screen.getByRole("menuitem", { name: "Log out" }).closest("form")).toHaveAttribute("action", "/api/auth/logout?locale=en");
   });
 
-  it("footer exposes only supported localized links", () => {
+  it("footer exposes supported product and legal foundations", () => {
     render(<SiteFooter locale="en" isLoggedIn />);
     expect(screen.getByRole("contentinfo", { name: "Site footer" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Courts" })).toHaveAttribute("href", "/en/courts");
     expect(screen.getByRole("link", { name: "My Bookings" })).toHaveAttribute("href", "/en/bookings");
-    expect(screen.queryByRole("link", { name: /privacy|terms|social/i })).toBeNull();
+    expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/en/privacy");
+    expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/en/terms");
+    expect(screen.queryByRole("link", { name: /social/i })).toBeNull();
   });
 });

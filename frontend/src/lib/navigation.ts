@@ -13,6 +13,7 @@ export function activeSection(pathname: string): NavSection {
   if (path === "/courts" || path.startsWith("/courts/")) return "courts";
   if (path === "/bookings" || path.startsWith("/bookings/")) return "bookings";
   if (path === "/matches" || path.startsWith("/matches/")) return "matches";
+  if (path === "/community" || path.startsWith("/community/")) return "matches";
   if (path === "/profile" || path.startsWith("/profile/")) return "profile";
   if (["/login", "/register"].includes(path)) return "auth";
   return null;
