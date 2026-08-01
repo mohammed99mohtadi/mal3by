@@ -1,2 +1,11 @@
-import { AuthForm } from "@/components/auth-form";import { BrandLogo } from "@/components/brand-logo";
-export default async function Register({params}:{params:Promise<{locale:string}>}){const {locale}=await params;return <section className="page-wrap grid min-h-[70vh] items-center gap-8 lg:grid-cols-2"><div className="hidden rounded-2xl border border-[var(--border)] bg-[radial-gradient(circle_at_top,#1d4d30,#11171b)] p-10 lg:block"><BrandLogo locale={locale}/><h1 className="mt-16 text-4xl font-black">Create your Mal3by account.</h1><p className="mt-4 muted">Book courts with live availability.</p></div><div><BrandLogo locale={locale} compact/><h1 className="mt-6 text-3xl font-black">Create account</h1><AuthForm locale={locale} mode="register"/></div></section>}
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { AuthForm } from "@/components/auth-form";
+import { AuthShell } from "@/components/auth-shell";
+import type { Locale } from "@/lib/copy";
+
+export default async function Register({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params; const safe = (locale === "en" ? "en" : "ar") as Locale;
+  if ((await cookies()).get("mal3by_session")) redirect(`/${safe}/profile`);
+  return <AuthShell locale={safe} mode="register"><AuthForm locale={safe} mode="register" /></AuthShell>;
+}

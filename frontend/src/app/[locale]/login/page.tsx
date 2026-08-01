@@ -1,2 +1,12 @@
-import { AuthForm } from "@/components/auth-form";import { BrandLogo } from "@/components/brand-logo";
-export default async function Login({params,searchParams}:{params:Promise<{locale:string}>;searchParams:Promise<{returnTo?:string}>}){const {locale}=await params;const {returnTo}=await searchParams;return <section className="page-wrap grid min-h-[70vh] items-center gap-8 lg:grid-cols-2"><div className="hidden rounded-2xl border border-[var(--border)] bg-[radial-gradient(circle_at_top,#1d4d30,#11171b)] p-10 lg:block"><BrandLogo locale={locale}/><p className="eyebrow mt-16">MAL3BY</p><h1 className="mt-3 text-4xl font-black">Your next court is waiting.</h1><p className="mt-4 muted">Discover real availability and manage every reservation.</p></div><div><BrandLogo locale={locale} compact/><h1 className="mt-6 text-3xl font-black">Log in</h1><p className="mt-2 muted">Continue to your bookings and profile.</p><AuthForm locale={locale} mode="login" returnTo={returnTo}/></div></section>}
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { AuthForm } from "@/components/auth-form";
+import { AuthShell } from "@/components/auth-shell";
+import type { Locale } from "@/lib/copy";
+import { safeReturnPath } from "@/lib/redirect";
+
+export default async function Login({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ returnTo?: string }> }) {
+  const { locale } = await params; const safe = (locale === "en" ? "en" : "ar") as Locale; const { returnTo } = await searchParams;
+  if ((await cookies()).get("mal3by_session")) redirect(safeReturnPath(returnTo ?? null, safe));
+  return <AuthShell locale={safe} mode="login"><AuthForm locale={safe} mode="login" returnTo={returnTo} /></AuthShell>;
+}

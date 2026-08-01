@@ -1,2 +1,17 @@
-import Link from "next/link";import { cookies } from "next/headers";import { redirect } from "next/navigation";import { api } from "@/lib/api";import type { User } from "@/lib/types";import { BrandLogo } from "@/components/brand-logo";
-export default async function Profile({params}:{params:Promise<{locale:string}>}){const {locale}=await params;const token=(await cookies()).get("mal3by_session")?.value;if(!token)redirect(`/${locale}/login`);let user:User;try{user=await api.me(token)}catch{redirect(`/${locale}/login`)}return <section className="page-wrap max-w-2xl"><div className="surface p-6"><BrandLogo locale={locale}/><div className="mt-8 flex items-center gap-4"><div aria-hidden className="grid size-16 place-items-center rounded-full bg-[var(--primary)] text-2xl font-black text-black">{user.full_name.slice(0,1).toUpperCase()}</div><div><h1 className="text-2xl font-black">{user.full_name}</h1><p className="muted">{user.email}</p></div></div><dl className="mt-8 grid gap-4 border-t border-[var(--border)] pt-6 text-sm"><div><dt className="muted">Phone</dt><dd>{user.phone_number||"-"}</dd></div><div><dt className="muted">Account type</dt><dd className="capitalize">{user.role}</dd></div></dl><div className="mt-8 flex flex-wrap gap-3"><Link className="brand-button px-4 py-2" href={`/${locale}/bookings`}>My Bookings</Link><form action="/api/auth/logout" method="post"><button className="rounded-lg border border-[var(--border)] px-4 py-2 font-bold" type="submit">Log out</button></form></div></div></section>}
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { api } from "@/lib/api";
+import { ApiError, type User } from "@/lib/types";
+import { PageHeader } from "@/components/ui/page-header";
+import { ProfileError } from "@/components/profile-error";
+import { ProfileCard } from "@/components/profile-card";
+import { copy, type Locale } from "@/lib/copy";
+
+export default async function Profile({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params; const safe = (locale === "en" ? "en" : "ar") as Locale; const t = copy[safe]; const token = (await cookies()).get("mal3by_session")?.value;
+  if (!token) redirect(`/${safe}/login?returnTo=${encodeURIComponent(`/${safe}/profile`)}`);
+  let user: User; try { user = await api.me(token); } catch (error) { if (error instanceof ApiError && error.status === 401) redirect(`/${safe}/login?returnTo=${encodeURIComponent(`/${safe}/profile`)}`); return <section className="page-wrap max-w-3xl"><ProfileError locale={safe} /></section>; }
+  return <section className="page-wrap max-w-3xl py-8 sm:py-12"><PageHeader eyebrow={t.profileEyebrow} title={t.profileTitle} description={t.profileDescription} />
+    <ProfileCard locale={safe} user={user} />
+  </section>;
+}
