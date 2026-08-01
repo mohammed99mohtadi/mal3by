@@ -19,13 +19,13 @@ export const Surface = React.forwardRef<HTMLDivElement, SurfaceProps>(
     },
     ref
   ) => {
-    const baseStyles = "rounded-[var(--radius-lg)] border border-[var(--border-strong)] transition-all duration-150";
+    const baseStyles = "rounded-[var(--radius-lg)] border border-[var(--border-strong)] transition-all duration-[var(--duration-fast)]";
 
     const variants = {
-      base: "bg-[var(--surface-1)] box-shadow-[var(--shadow-sm)]",
-      elevated: "bg-[var(--surface-2)] box-shadow-[var(--shadow-md)]",
+      base: "bg-[var(--surface-1)] shadow-[var(--shadow-sm)]",
+      elevated: "bg-[var(--surface-elevated)] shadow-[var(--shadow-md)]",
       interactive:
-        "bg-[var(--surface-1)] box-shadow-[var(--shadow-sm)] hover:border-[var(--brand)]/50 hover:bg-[var(--surface-2)] cursor-pointer focus-ring",
+        "bg-[var(--surface-1)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)]/50 hover:bg-[var(--surface-muted)] cursor-pointer focus-ring",
     };
 
     const paddings = {

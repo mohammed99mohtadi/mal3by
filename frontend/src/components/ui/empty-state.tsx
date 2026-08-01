@@ -24,8 +24,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   className,
   ...props
 }) => {
+  const titleId = React.useId();
   return (
     <div
+      role="region"
+      aria-labelledby={titleId}
       className={cn(
         "flex flex-col items-center justify-center text-center",
         size === "large" ? "py-16 px-6 gap-4" : "py-8 px-4 gap-3",
@@ -45,14 +48,15 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
         </span>
       )}
       <div>
-        <p
+        <h2
+          id={titleId}
           className={cn(
             "font-bold text-[var(--text-primary)]",
             size === "large" ? "text-lg" : "text-base"
           )}
         >
           {title}
-        </p>
+        </h2>
         {description && (
           <p
             className={cn(

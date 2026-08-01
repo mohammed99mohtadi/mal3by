@@ -7,9 +7,11 @@
   --surface-2: #151d22;
   --surface-3: #1c262d;
   --surface-elevated: #222f37;
+  --surface-muted: var(--surface-2);
 
   --border-subtle: #1e282e;
   --border-strong: #263036;
+  --focus-ring: var(--brand);
 
   --text-primary: #ffffff;
   --text-secondary: #c2cbd0;
@@ -46,6 +48,7 @@
   --page-gutter: clamp(1rem, 4vw, 2.5rem);
   --content-max: 1120px;
   --mobile-nav-height: 76px;
+  --touch-target: 2.75rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
   /* Backward Compatibility Aliases */
@@ -60,6 +63,14 @@
   --radius: var(--radius-lg);
   --shadow: var(--shadow-lg);
   --space: 1rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --content-narrow: 42rem;
+  --content-wide: 80rem;
 }
 
 @theme inline {
@@ -83,14 +94,48 @@ body {
   font-family: var(--font-app), Arial, sans-serif;
 }
 
+.font-ar { --font-app: var(--font-cairo); line-height: 1.65; }
+.font-en { --font-app: var(--font-poppins); line-height: 1.5; }
+.font-ar .eyebrow { letter-spacing: 0; }
+
+.text-display { font-size: clamp(2.25rem, 6vw, 4rem); font-weight: 800; line-height: 1.12; letter-spacing: -0.025em; }
+.text-page-title { font-size: clamp(1.875rem, 4vw, 2.5rem); font-weight: 800; line-height: 1.2; }
+.text-section-title { font-size: clamp(1.375rem, 3vw, 1.875rem); font-weight: 800; line-height: 1.3; }
+.text-card-title { font-size: 1.125rem; font-weight: 700; line-height: 1.4; }
+.text-body { font-size: 1rem; line-height: 1.7; }
+.text-body-sm { font-size: 0.875rem; line-height: 1.65; }
+.text-label { font-size: 0.875rem; font-weight: 600; line-height: 1.5; }
+.text-helper { font-size: 0.75rem; line-height: 1.5; color: var(--text-muted); }
+.text-stat { font-variant-numeric: tabular-nums; font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 800; line-height: 1.2; }
+
+.bidi-isolate { unicode-bidi: isolate; }
+.bidi-value { direction: ltr; unicode-bidi: isolate; display: inline-block; text-align: start; }
+.bidi-auto { direction: inherit; unicode-bidi: plaintext; }
+
 a {
   text-decoration: none;
 }
 
 .focus-ring:focus-visible {
-  outline: 3px solid var(--brand);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+.skip-link {
+  position: fixed;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  z-index: 100;
+  transform: translateY(-150%);
+  border-radius: var(--radius-md);
+  background: var(--brand);
+  color: var(--brand-foreground);
+  padding: var(--space-3) var(--space-4);
+  font-weight: 800;
+}
+.skip-link:focus { transform: translateY(0); }
+
+body:has([role="dialog"][aria-modal="true"]) { overflow: hidden; }
 
 /* Backward Compatibility Utility Classes */
 .surface {

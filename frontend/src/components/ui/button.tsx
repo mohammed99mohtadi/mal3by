@@ -24,7 +24,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-bold text-center border transition-all duration-150 ease-in-out focus-ring cursor-pointer select-none disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:pointer-events-none";
+      "inline-flex items-center justify-center font-bold text-center border transition-all duration-[var(--duration-fast)] ease-in-out focus-ring cursor-pointer select-none disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:pointer-events-none";
 
     const variants = {
       primary: "bg-[var(--brand)] text-[var(--brand-foreground)] border-transparent hover:brightness-105 active:brightness-95",
@@ -44,6 +44,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         disabled={disabled || isLoading}
+        aria-busy={isLoading || undefined}
         className={cn(
           baseStyles,
           variants[variant],
@@ -53,10 +54,12 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         )}
         {...props}
       >
-        {isLoading ? (
-          <>
+        <span className="grid items-center justify-items-center">
+          <span className={cn("col-start-1 row-start-1 inline-flex items-center", isLoading && "invisible")} aria-hidden={isLoading || undefined}>{children}</span>
+        {isLoading && (
+          <span className="col-start-1 row-start-1 inline-flex items-center">
             <svg
-              className="animate-spin -ms-1 me-2 h-4 w-4 text-current"
+              className="animate-spin me-2 h-4 w-4 text-current"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
@@ -77,10 +80,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
               ></path>
             </svg>
             <span>{children}</span>
-          </>
-        ) : (
-          children
+          </span>
         )}
+        </span>
       </button>
     );
   }
