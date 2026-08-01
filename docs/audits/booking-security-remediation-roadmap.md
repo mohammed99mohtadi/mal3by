@@ -4,6 +4,8 @@ This roadmap splits the audit findings into reviewable units. Each unit must pre
 
 ## Recommended first unit: A1 — concurrent hold invariant
 
+**Implementation status (2026-08-01): IMPLEMENTED, POSTGRESQL VALIDATION PENDING.** Revision `c3d4e5f6a7b8` follows `b8c9d0e1f2a3`. It creates `btree_gist` safely and adds `excl_bookings_active_court_time_overlap` over equal court IDs and half-open `[start,end)` ranges for `pending`, `pending_payment`, and `confirmed`. Exact-name `IntegrityError` handling rolls back and returns existing safe 409 response. SQLite mapping tests pass; opt-in PostgreSQL invariant/concurrency tests exist but remain skipped without an explicitly confirmed isolated database.
+
 **Scope:** Make creation of overlapping active booking intervals for one court impossible under PostgreSQL concurrency. Define active statuses and buffer semantics precisely. Convert expected contention into a stable 409 response.
 
 **Likely files:** booking/availability services, Booking model, one new Alembic revision, PostgreSQL test fixtures, new concurrency tests.
@@ -16,11 +18,15 @@ This roadmap splits the audit findings into reviewable units. Each unit must pre
 
 **Risk:** High. Range semantics, time zones, buffer rules, and live duplicate data can make a constraint unsafe. Keep unit limited to hold creation; confirmation race comes next.
 
+**Deployment:** Confirm backup; persist expired-hold cleanup; run preflight overlap SQL from hardening audit; resolve every returned pair; verify extension privilege; deploy compatible error mapping; migrate; smoke-test adjacency, different courts, inactive statuses, and concurrent collision. Constraint creation may lock/scan `bookings`. No extra overlap index is added because exclusion constraint already creates its GiST support structure. Under contention PostgreSQL serializes conflicting GiST checks; one commit succeeds and loser receives 409, at cost of lock wait.
+
+**Rollback:** Stop booking writes, downgrade one revision to remove constraint, retain shared `btree_gist`, then restore app only if needed. This reopens race; never treat downgrade as data repair.
+
 ## Ordered units
 
 | Unit | Scope | Likely changes / migration | Tests and exit criteria | Risk |
 |---|---|---|---|---|
-| A1 | Concurrent hold invariant | Booking/availability service; model; new migration | PostgreSQL races; one winner and stable conflict | High |
+| A1 | Concurrent hold invariant — implemented, PostgreSQL validation pending | Booking service; migration `c3d4e5f6a7b8`; opt-in tests | Static upgrade/downgrade valid; isolated PostgreSQL race run still required | High |
 | A2 | Locked lifecycle transitions | Confirm, cancel, expire; row lock or optimistic version; possibly version column migration | Confirm-vs-expire/cancel races; deterministic idempotent retry | High |
 | B1 | Cleanup transaction ownership | Cleanup service/endpoint/job boundary; no migration expected | Expirations persist in fresh session; failure rolls back | Medium |
 | B2 | Cancellation/completion policy | Policy module/service, schemas, timestamps/events | Cutoff boundaries, end-time completion, actor matrix | Medium |

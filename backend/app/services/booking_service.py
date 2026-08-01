@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import HTTPException, status
 from sqlalchemy import select, or_, and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.booking import Booking, BookingStatus
@@ -11,6 +12,9 @@ from app.schemas.booking import BookingCreate, BookingHoldCreate, BookingHoldSta
 from app.services.availability_service import expire_outdated_holds, make_utc_aware, validate_requested_booking_time
 
 from app.services.pricing_service import calculate_booking_price
+
+BOOKING_ACTIVE_TIME_OVERLAP_CONSTRAINT = "excl_bookings_active_court_time_overlap"
+BOOKING_OVERLAP_DETAIL = "The requested time slot overlaps with an existing booking or buffer period."
 
 ALLOWED_TRANSITIONS = {
     BookingStatus.PENDING_PAYMENT: {
@@ -100,12 +104,24 @@ def create_booking_hold(
         db.add(db_booking)
         db.commit()
         db.refresh(db_booking)
-    except Exception:
+    except IntegrityError as exc:
+        db.rollback()
+        constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if constraint_name == BOOKING_ACTIVE_TIME_OVERLAP_CONSTRAINT:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=BOOKING_OVERLAP_DETAIL,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create booking hold",
+        ) from exc
+    except Exception as exc:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to create booking hold",
-        )
+        ) from exc
 
     return get_booking_by_id(db, db_booking.id)
 

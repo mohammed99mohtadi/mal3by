@@ -10,9 +10,51 @@ Scope: read-only repository audit; documentation is the only output.
 
 The existing functional baseline is healthy: the backend suite passes and Alembic has one head. Authorization checks are generally explicit, booking prices are calculated server-side and snapshotted, private-match visibility has dedicated tests, and the frontend stores the access token in an HttpOnly cookie rather than browser storage.
 
-The booking path is not safe for public concurrent traffic or real payments yet. Availability is checked in application code before an unconstrained insert. There is no PostgreSQL exclusion constraint, slot lock, or serializable retry. Two requests can therefore hold the same court interval. Separately, an authenticated booking owner can call `confirm-payment` and create a confirmed booking without evidence from a payment provider. Production configuration also has unsafe fallbacks, abuse controls are absent, and no verified backup/restore process is documented.
+At audit baseline, availability was checked in application code before an unconstrained insert, so concurrent requests could hold the same court interval. A1 now implements a PostgreSQL exclusion constraint and safe conflict mapping, but isolated PostgreSQL validation remains pending. The booking path is therefore not cleared for public concurrent traffic yet. Separately, an authenticated booking owner can call `confirm-payment` and create a confirmed booking without evidence from a payment provider. Production configuration also has unsafe fallbacks, abuse controls are absent, and no verified backup/restore process is documented.
 
 Severity totals: **Critical 0, High 5, Medium 8, Low 4, Informational 2**.
+
+## A1 implementation update — 2026-08-01
+
+Status: **implemented, PostgreSQL validation pending**.
+
+- New head: `c3d4e5f6a7b8`, parent `b8c9d0e1f2a3`.
+- PostgreSQL extension: `btree_gist`, created with `IF NOT EXISTS`.
+- Constraint: `excl_bookings_active_court_time_overlap`.
+- Invariant: equal `court_id` plus overlapping `tstzrange(start_time, end_time, '[)')` is rejected when status is `pending`, `pending_payment`, or `confirmed`.
+- Adjacent intervals remain valid. Same interval on different courts remains valid. `cancelled`, `expired`, `rejected`, `refunded`, and `completed` do not participate.
+- Existing service availability/buffer validation remains for friendly early rejection. Database constraint is final protection for true interval overlap; buffer-only concurrency remains service-enforced.
+- PostgreSQL exclusion violation is recognized only by exact constraint name, rolled back, and mapped to existing safe HTTP 409 detail. Other integrity failures retain generic HTTP 400 handling. SQL and constraint names are not returned.
+- Server-authoritative price calculation and one hold insert/commit transaction remain unchanged.
+- SQLite service tests cover safe error mapping. Opt-in PostgreSQL tests cover active/inactive statuses, courts, adjacency, and two-session concurrency, but were skipped because no isolated PostgreSQL database was confirmed.
+
+### Production preflight — do not run until target is confirmed
+
+First persist expiration cleanup so stale `pending`/`pending_payment` rows have status `expired`. Then run this read-only query. Migration must stop if it returns rows:
+
+```sql
+SELECT
+    first_booking.id AS first_booking_id,
+    second_booking.id AS second_booking_id,
+    first_booking.court_id,
+    first_booking.status AS first_status,
+    second_booking.status AS second_status,
+    tstzrange(first_booking.start_time, first_booking.end_time, '[)') AS first_interval,
+    tstzrange(second_booking.start_time, second_booking.end_time, '[)') AS second_interval
+FROM bookings AS first_booking
+JOIN bookings AS second_booking
+  ON first_booking.court_id = second_booking.court_id
+ AND first_booking.id < second_booking.id
+ AND tstzrange(first_booking.start_time, first_booking.end_time, '[)')
+     && tstzrange(second_booking.start_time, second_booking.end_time, '[)')
+WHERE first_booking.status IN ('pending', 'pending_payment', 'confirmed')
+  AND second_booking.status IN ('pending', 'pending_payment', 'confirmed')
+ORDER BY first_booking.court_id, first_booking.start_time, second_booking.start_time;
+```
+
+Deployment order: confirm backup and restore readiness; persist expired-hold cleanup; run preflight; verify permission to create `btree_gist`; deploy compatible service error mapping; migrate to `c3d4e5f6a7b8`; run invariant smoke tests and monitor 409/DB lock rates. Constraint creation scans and locks `bookings`, so schedule based on measured table size and lock tolerance.
+
+Rollback: stop booking writes if correctness is uncertain; downgrade one revision to drop only the exclusion constraint; keep shared `btree_gist`; roll back application if needed. Downgrade restores prior race risk and does not repair data, so use only with explicit approval.
 
 ## Baseline and environment safety
 
@@ -51,7 +93,7 @@ Rescheduling and changing court/time are unsupported. Keep them unsupported unti
 
 ## Double-booking analysis
 
-Current protection is **service-enforced only**. `validate_requested_booking_time()` reads availability, `create_booking_hold()` calculates price, then inserts and commits. The overlap query reads all active bookings for a court and checks times in Python. The booking table has ordinary single-column indexes but no unique/exclusion constraint for active overlapping ranges. Booking hold and confirmation do not use `FOR UPDATE`; default SQLAlchemy engine isolation is used.
+At audit time protection was **service-enforced only**. A1 now adds the PostgreSQL exclusion constraint described above while preserving the early service check. The overlap query still reads all active bookings for a court and checks times in Python. Booking confirmation/lifecycle updates still do not use `FOR UPDATE`; those races remain A2 scope.
 
 | Race | Current protection | Classification | Outcome |
 |---|---|---|---|
@@ -179,7 +221,7 @@ No repository evidence establishes automated PostgreSQL backups, retention, RPO/
 
 | ID | Severity | Title | Affected files | Failure/impact | Fix and required tests | Blocks new features? |
 |---|---|---|---|---|---|---|
-| BSH-001 | High | Overlapping bookings are not database-enforced | `booking_service.py`, `availability_service.py`, booking model/migration | Concurrent holds/confirmations can double-book one court | PostgreSQL transaction design plus exclusion/lock invariant; concurrent hold/final-slot/cancel-confirm tests | Yes: public booking/payments |
+| BSH-001 | High | Active interval overlap invariant implemented; PostgreSQL validation pending | booking service and `c3d4e5f6a7b8` migration | Constraint design prevents concurrent active overlaps, but isolated PostgreSQL execution is not yet proven | Run opt-in PostgreSQL upgrade/concurrency/downgrade/upgrade tests; keep A2 lifecycle races separate | Yes until PostgreSQL validation passes |
 | BSH-002 | High | User can self-confirm “payment” | booking endpoint/service/schema; frontend confirm | Any booking owner can mark unpaid hold confirmed | Remove public trust path; provider-verified, idempotent state machine; forged/duplicate/webhook tests | Yes: payments |
 | BSH-003 | High | Unsafe production configuration fallbacks | `core/config.py` | Missing env may activate known fallback signing secret and debug mode | Fail closed outside test/dev; secret strength/rotation checks; startup configuration tests | Yes: public launch |
 | BSH-004 | High | No rate limits or active-hold quota | auth, bookings, matches, reviews | Credential attacks, inventory denial, spam and expensive-query abuse | Layered IP/account limits, server TTL, quota, 429 tests | Yes: public launch |
@@ -221,4 +263,4 @@ P1: cancellation cutoff/end-time/completion/refund policy, duplicate webhook/ide
 
 ## Release conclusion
 
-Normal non-booking feature development can continue if it does not deepen these risks. Public booking launch should wait for BSH-001, BSH-003, and BSH-004. Real payment acceptance should additionally wait for BSH-002, BSH-005, BSH-007 through BSH-009, and BSH-012. The first remediation unit should be the narrowly scoped PostgreSQL booking-overlap invariant described in the roadmap.
+Normal non-booking feature development can continue if it does not deepen these risks. Public booking launch should wait for PostgreSQL validation of BSH-001 plus BSH-003 and BSH-004. Real payment acceptance should additionally wait for BSH-002, BSH-005, BSH-007 through BSH-009, and BSH-012. After A1 validation, next booking correctness unit is A2 locked lifecycle transitions.

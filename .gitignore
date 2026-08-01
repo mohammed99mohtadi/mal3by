@@ -1,10 +1,7 @@
-.venv/
-__pycache__/
-*.pyc
-.env
-*.db
-.pytest_cache/
-.idea/
-.vscode/.agents/
-
+warning: in the working copy of 'backend/app/services/booking_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/test_booking_lifecycle.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/test_pricing.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/audits/booking-security-hardening-audit.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/audits/booking-security-remediation-roadmap.md', LF will be replaced by CRLF the next time Git touches it
+.vscode/
 .agents/
