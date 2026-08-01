@@ -1,192 +1,53 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import Link from "next/link";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Surface } from "@/components/ui/surface";
-import { copy, type Locale } from "@/lib/copy";
-import type { Match, MatchJoinRequest } from "@/lib/types";
+import { lifecycleLabel, matchCommunityCopy, matchTone, participantLabel, positionLabel } from "@/lib/match-community";
+import type { Locale } from "@/lib/copy";
+import type { Match, MatchJoinRequest, MatchParticipant } from "@/lib/types";
 
-type Props = {
-  locale: Locale;
-  initialMatch: Match;
-  initialRequest: MatchJoinRequest | null;
-  initialPendingRequests: MatchJoinRequest[];
-};
+type Action = { kind:"withdraw"|"leave"|"approve"|"reject"; request?:MatchJoinRequest } | null;
+type Props={locale:Locale;initialMatch:Match;initialRequest:MatchJoinRequest|null;initialPendingRequests:MatchJoinRequest[];initialParticipants?:MatchParticipant[]};
 
-const badgeTone = {
-  open: "success",
-  full: "warning",
-  cancelled: "danger",
-  completed: "neutral",
-} as const;
+export function MatchExperience({locale,initialMatch,initialRequest,initialPendingRequests,initialParticipants=[]}:Props){
+  const t=matchCommunityCopy[locale];
+  const [match,setMatch]=useState(initialMatch),[request,setRequest]=useState(initialRequest),[pending,setPending]=useState(initialPendingRequests),[participants,setParticipants]=useState(initialParticipants);
+  const [busy,setBusy]=useState<string|null>(null),[error,setError]=useState<string|null>(null),[notice,setNotice]=useState<string|null>(null),[confirm,setConfirm]=useState<Action>(null);
+  const confirmRef=useRef<HTMLButtonElement>(null);
+  const requirements=match.position_requirements??[],[position,setPosition]=useState("");
 
-export function MatchExperience({ locale, initialMatch, initialRequest, initialPendingRequests }: Props) {
-  const text = copy[locale];
-  const [match, setMatch] = useState(initialMatch);
-  const [request, setRequest] = useState(initialRequest);
-  const [pendingRequests, setPendingRequests] = useState(initialPendingRequests);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const alertRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (error) alertRef.current?.focus();
-  }, [error]);
-
-  async function post(path: string) {
-    setBusy(path);
-    setError(false);
-    try {
-      const response = await fetch(`/api/matches/${match.id}/${path}`, { method: "POST" });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error();
-      return data;
-    } catch {
-      setError(true);
-      return null;
-    } finally {
-      setBusy(null);
-    }
+  async function post(path:string,payload?:unknown){
+    if(busy)return null;setBusy(path);setError(null);setNotice(null);
+    try{const response=await fetch(`/api/matches/${match.id}/${path}`,{method:"POST",headers:payload?{"Content-Type":"application/json"}:undefined,body:payload?JSON.stringify(payload):undefined});const data=await response.json().catch(()=>null);if(!response.ok){setError(response.status===409?t.conflict:response.status===422?t.invalidPosition:response.status===401?t.unauthorized:t.actionError);return null}return data}
+    catch{setError(t.actionError);return null}finally{setBusy(null)}
   }
+  async function join(){const path=match.join_policy==="approval_required"?"join-requests":"join";const result=await post(path,path==="join-requests"?{position_code:position||null}:undefined);if(!result)return;if(path==="join-requests")setRequest(result);else setMatch(result)}
+  async function act(){if(!confirm)return;const item=confirm.request;let result=null;if(confirm.kind==="withdraw"&&request)result=await post(`join-requests/${request.id}/withdraw`);if(confirm.kind==="leave")result=await post("leave");if((confirm.kind==="approve"||confirm.kind==="reject")&&item)result=await post(`join-requests/${item.id}/${confirm.kind}`);if(!result)return;if(confirm.kind==="withdraw"){setRequest(result);setNotice(t.successWithdraw)}if(confirm.kind==="leave")setMatch(result);if(item&&(confirm.kind==="approve"||confirm.kind==="reject")){setPending(current=>current.filter(value=>value.id!==item.id));setNotice(confirm.kind==="approve"?t.successApprove:t.successReject);if(confirm.kind==="approve")setParticipants(current=>[...current,{id:-item.id,user_id:item.user_id,user_name:item.requester?.full_name,status:"approved",created_at:item.created_at}])}setConfirm(null)}
 
-  async function join() {
-    if (match.join_policy === "approval_required") {
-      const result = await post("join-requests");
-      if (result) setRequest(result as MatchJoinRequest);
-      return;
-    }
-    const result = await post("join");
-    if (result) setMatch(result as Match);
-  }
-
-  async function withdraw() {
-    if (!request) return;
-    const result = await post(`join-requests/${request.id}/withdraw`);
-    if (result) setRequest(result as MatchJoinRequest);
-  }
-
-  async function leave() {
-    const result = await post("leave");
-    if (result) setMatch(result as Match);
-  }
-
-  async function review(joinRequest: MatchJoinRequest, action: "approve" | "reject") {
-    const result = await post(`join-requests/${joinRequest.id}/${action}`);
-    if (result) setPendingRequests((current) => current.filter((item) => item.id !== joinRequest.id));
-  }
-
-  const statusLabel = {
-    open: text.matchOpen,
-    full: text.matchFull,
-    cancelled: text.matchCancelled,
-    completed: text.matchCompleted,
-  }[match.status];
-  const capacityPercent = match.max_players ? (match.approved_participant_count / match.max_players) * 100 : 0;
-  const requestStatus = request?.status;
-  const canJoin = match.status === "open" && match.available_spots > 0 && !match.has_joined && requestStatus !== "pending";
-  const start = new Date(match.start_time);
-  const end = new Date(match.end_time);
-  const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: "long" });
-  const timeFormat = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" });
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(19rem,.65fr)]">
-      <div className="space-y-6">
-        <Surface as="article" padding="lg">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="eyebrow">{text.matchDetails}</p>
-              <h1 className="mt-2 text-3xl font-black sm:text-4xl">{match.title}</h1>
-            </div>
-            <StatusBadge status={badgeTone[match.status]}>{statusLabel}</StatusBadge>
-          </div>
-
-          <dl className="mt-8 grid gap-5 border-t border-[var(--border-strong)] pt-6 sm:grid-cols-2">
-            {[
-              [text.matchSport, match.sport_type],
-              [text.matchVenue, locale === "ar" ? match.court.name_ar : match.court.name_en],
-              [text.matchDate, dateFormat.format(start)],
-              [text.matchTime, `${timeFormat.format(start)} – ${timeFormat.format(end)}`],
-              [text.matchOrganizer, match.creator.full_name],
-              [text.matchCapacity, `${match.max_players} ${text.matchPlayers}`],
-              [text.matchJoined, `${match.approved_participant_count} ${text.matchPlayers}`],
-              [text.matchAvailable, `${match.available_spots} ${text.matchPlayers}`],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <dt className="text-sm text-[var(--text-muted)]">{label}</dt>
-                <dd className="mt-1 font-bold">{value}</dd>
-              </div>
-            ))}
-          </dl>
-
-          <ProgressBar className="mt-7" value={capacityPercent} label={text.matchCapacity} />
-          {match.description ? (
-            <section className="mt-7 border-t border-[var(--border-strong)] pt-6" aria-labelledby="match-description">
-              <h2 id="match-description" className="text-lg font-black">{text.matchDescription}</h2>
-              <p className="mt-2 whitespace-pre-wrap leading-7 text-[var(--text-secondary)]">{match.description}</p>
-            </section>
-          ) : null}
-        </Surface>
-
-        {match.can_manage ? (
-          <Surface as="section" padding="lg" aria-labelledby="join-requests-heading">
-            <div className="flex items-center justify-between gap-3">
-              <h2 id="join-requests-heading" className="text-xl font-black">{text.matchRequests}</h2>
-              <StatusBadge status="warning">{pendingRequests.length}</StatusBadge>
-            </div>
-            {pendingRequests.length ? (
-              <ul className="mt-5 divide-y divide-[var(--border-strong)]">
-                {pendingRequests.map((item) => {
-                  const approving = busy === `join-requests/${item.id}/approve`;
-                  const rejecting = busy === `join-requests/${item.id}/reject`;
-                  return (
-                    <li key={item.id} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="font-bold">{item.requester?.full_name ?? `#${item.user_id}`}</p>
-                      <div className="flex gap-2">
-                        <Button aria-label={`${text.matchApprove} ${item.requester?.full_name ?? item.user_id}`} isLoading={approving} disabled={busy !== null} onClick={() => review(item, "approve")}>{text.matchApprove}</Button>
-                        <Button aria-label={`${text.matchReject} ${item.requester?.full_name ?? item.user_id}`} variant="danger" isLoading={rejecting} disabled={busy !== null} onClick={() => review(item, "reject")}>{text.matchReject}</Button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <EmptyState size="compact" title={text.matchNoRequests} description={text.matchNoRequestsDesc} />
-            )}
-          </Surface>
-        ) : null}
-      </div>
-
-      <aside className="h-fit lg:sticky lg:top-24">
-        <Surface padding="lg">
-          {error ? <div ref={alertRef} tabIndex={-1}><Alert className="mb-4" tone="danger" message={text.matchActionError} /></div> : null}
-          {match.can_manage ? (
-            <Alert tone="info" message={text.matchOrganizerView} />
-          ) : requestStatus === "pending" ? (
-            <>
-              <Alert tone="warning" message={text.matchRequestPending} />
-              <Button className="mt-4" fullWidth variant="outline" isLoading={busy?.endsWith("/withdraw")} disabled={busy !== null} onClick={withdraw}>{busy ? text.matchWithdrawing : text.matchWithdraw}</Button>
-            </>
-          ) : match.current_user_participant_status === "pending" ? (
-            <Alert tone="warning" message={text.matchRequestPending} />
-          ) : requestStatus === "rejected" ? (
-            <Alert tone="danger" message={text.matchRequestRejected} />
-          ) : match.current_user_participant_status === "approved" || requestStatus === "approved" ? (
-            <>
-              <Alert tone="success" message={text.matchAlreadyJoined} />
-              <Button className="mt-4" fullWidth variant="outline" isLoading={busy === "leave"} disabled={busy !== null} onClick={leave}>{busy ? text.matchLeaving : text.matchLeave}</Button>
-            </>
-          ) : canJoin ? (
-            <Button fullWidth size="lg" isLoading={busy !== null} disabled={busy !== null} onClick={join}>{busy ? text.matchJoining : text.matchJoin}</Button>
-          ) : (
-            <Alert tone="info" message={statusLabel} />
-          )}
-        </Surface>
-      </aside>
+  const requestStatus=request?.status,canJoin=match.status==="open"&&match.available_spots>0&&!match.has_joined&&requestStatus!=="pending",start=new Date(match.start_time),end=new Date(match.end_time),date=new Intl.DateTimeFormat(locale,{dateStyle:"long"}),time=new Intl.DateTimeFormat(locale,{hour:"numeric",minute:"2-digit"});
+  const approved=participants.filter(item=>item.status==="approved");
+  const confirmText=confirm?.kind==="withdraw"?t.confirmWithdraw:confirm?.kind==="leave"?t.confirmLeave:confirm?.kind==="approve"?t.confirmApprove:t.confirmReject;
+  return <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(19rem,.65fr)]">
+    <div className="min-w-0 space-y-6">
+      <Surface as="article" padding="lg">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="eyebrow">{t.details}</p><h1 className="mt-2 break-words text-3xl font-black sm:text-4xl" dir="auto">{match.title}</h1><p className="mt-3 text-sm text-[var(--text-muted)]"><bdi>{locale==="ar"?match.court.name_ar:match.court.name_en}</bdi> · <bdi>{match.court.area}</bdi></p></div><StatusBadge status={matchTone(match.status)}>{lifecycleLabel(locale,match.status)}</StatusBadge></div>
+        <dl className="mt-7 grid gap-5 border-t border-[var(--border-strong)] pt-6 sm:grid-cols-2 xl:grid-cols-3">
+          {[[t.sport,match.sport_type],[t.date,date.format(start)],[t.time,`${time.format(start)} – ${time.format(end)}`],[t.host,match.creator.full_name],[t.capacity,`${match.approved_participant_count}/${match.max_players}`],[t.available,String(match.available_spots)],[t.skill,t[match.skill_level==="all_levels"?"allLevels":match.skill_level]],[t.visibility,t[match.visibility]],[t.booking,`#${match.booking_id}`]].map(([label,value])=><div key={label}><dt className="text-sm text-[var(--text-muted)]">{label}</dt><dd className="mt-1 break-words font-bold" dir="auto"><bdi>{value}</bdi></dd></div>)}
+        </dl><ProgressBar className="mt-7" value={(match.approved_participant_count/match.max_players)*100} label={t.capacity}/>
+        {requirements.length>0&&<section className="mt-7 border-t border-[var(--border-strong)] pt-6"><h2 className="text-lg font-black">{t.position}</h2><ul className="mt-3 flex flex-wrap gap-2">{requirements.map(item=><li key={item.position_code} className="rounded-full bg-[var(--surface-3)] px-3 py-2 text-sm font-bold">{positionLabel(locale,item.position_code)} ×<bdi>{item.required_count}</bdi></li>)}</ul></section>}
+        {match.description&&<section className="mt-7 border-t border-[var(--border-strong)] pt-6" aria-labelledby="description"><h2 id="description" className="text-lg font-black">{t.description}</h2><p className="mt-2 whitespace-pre-wrap break-words leading-7 text-[var(--text-secondary)]" dir="auto">{match.description}</p></section>}
+      </Surface>
+      <Surface as="section" padding="lg" aria-labelledby="participants"><h2 id="participants" className="text-xl font-black">{t.participants} <bdi>({approved.length||match.approved_participant_count})</bdi></h2>{approved.length?<ul className="mt-5 grid gap-3 sm:grid-cols-2">{approved.map(item=><li key={item.id} className="flex min-h-14 items-center gap-3 rounded-[var(--radius-md)] border border-[var(--border)] p-3"><span aria-hidden className="grid size-10 place-items-center rounded-full bg-[var(--brand)]/15 font-black text-[var(--brand)]">{(item.user_name??t.player).slice(0,1)}</span><span className="min-w-0"><bdi className="block truncate font-bold">{item.user_name??t.player}</bdi><span className="text-xs text-[var(--text-muted)]">{item.user_id===match.creator.id?t.hostBadge:participantLabel(locale,item.status)}</span></span></li>)}</ul>:<EmptyState size="compact" title={t.noParticipants}/>}</Surface>
+      {match.can_manage&&<Surface as="section" padding="lg" aria-labelledby="requests"><div className="flex justify-between gap-3"><h2 id="requests" className="text-xl font-black">{t.requests}</h2><StatusBadge status="warning">{pending.length}</StatusBadge></div>{pending.length?<ul className="mt-5 divide-y divide-[var(--border-strong)]">{pending.map(item=><li key={item.id} className="flex flex-col gap-3 py-4 first:pt-0 sm:flex-row sm:items-center sm:justify-between"><div><bdi className="font-bold">{item.requester?.full_name??t.player}</bdi>{item.requested_position_code&&<p className="mt-1 text-xs text-[var(--text-muted)]">{positionLabel(locale,item.requested_position_code)}</p>}<time className="mt-1 block text-xs text-[var(--text-muted)]" dateTime={item.created_at}>{date.format(new Date(item.created_at))}</time></div><div className="flex gap-2"><Button disabled={busy!==null} onClick={()=>setConfirm({kind:"approve",request:item})}>{t.approve}</Button><Button variant="danger" disabled={busy!==null} onClick={()=>setConfirm({kind:"reject",request:item})}>{t.reject}</Button></div></li>)}</ul>:<EmptyState size="compact" title={t.noRequests} description={t.noRequestsText}/>}</Surface>}
     </div>
-  );
+    <aside className="h-fit lg:sticky lg:top-24"><Surface padding="lg">{error&&<Alert className="mb-4" tone="danger" message={error}/>}<div role="status" aria-live="polite">{notice&&<Alert className="mb-4" tone="success" message={notice}/>}</div>{match.can_manage?<><Alert tone="info" message={t.organizer}/><Link className="focus-ring mt-4 flex min-h-11 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border-strong)] px-4 font-bold" href={`/${locale}/matches/requests`}>{t.manage}</Link></>:requestStatus==="pending"?<><Alert tone="warning" message={t.pending}/><Button className="mt-4" fullWidth variant="outline" disabled={busy!==null} onClick={()=>setConfirm({kind:"withdraw"})}>{t.withdraw}</Button></>:match.current_user_participant_status==="approved"||requestStatus==="approved"?<><Alert tone="success" message={t.alreadyJoined}/><Button className="mt-4" fullWidth variant="outline" disabled={busy!==null} onClick={()=>setConfirm({kind:"leave"})}>{t.leave}</Button></>:canJoin?<>{requirements.length>0&&match.join_policy==="approval_required"&&<label className="mb-4 grid gap-2 text-sm font-bold">{t.position}<select className="min-h-11 rounded-[var(--radius-md)] border border-[var(--border-strong)] bg-[var(--surface-1)] px-3" value={position} onChange={event=>setPosition(event.target.value)}><option value="">—</option>{requirements.map(item=><option key={item.position_code} value={item.position_code}>{positionLabel(locale,item.position_code)}</option>)}</select></label>}<Button fullWidth size="lg" isLoading={busy!==null} disabled={busy!==null} onClick={join}>{match.join_policy==="approval_required"?t.requestJoin:t.join}</Button></>:<Alert tone="info" message={match.status==="full"?t.full:t.closed}/>}</Surface></aside>
+    <Dialog open={confirm!==null} onClose={()=>!busy&&setConfirm(null)} title={confirmText} initialFocusRef={confirmRef}><div className="flex justify-end gap-2"><Button variant="outline" disabled={busy!==null} onClick={()=>setConfirm(null)}>{t.cancel}</Button><Button ref={confirmRef} variant={confirm?.kind==="reject"?"danger":"primary"} isLoading={busy!==null} disabled={busy!==null} onClick={act}>{t.confirm}</Button></div></Dialog>
+  </div>
 }

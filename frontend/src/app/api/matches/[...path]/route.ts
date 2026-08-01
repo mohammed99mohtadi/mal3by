@@ -25,7 +25,12 @@ async function forward(request: Request, { params }: { params: Promise<{ path: s
   }
   if (!backendPath) return NextResponse.json({ detail: "Unsupported match operation" }, { status: 404 });
 
-  const body = resource === "join-requests" && path.length === 2 ? "{}" : undefined;
+  let body: string | undefined;
+  if (resource === "join-requests" && path.length === 2) {
+    const submitted = await request.json().catch(() => ({}));
+    const position = typeof submitted?.position_code === "string" ? submitted.position_code.trim() : null;
+    body = JSON.stringify({ position_code: position || null });
+  }
   const response = await fetch(`${base}/matches/${backendPath}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json" },
