@@ -25,7 +25,7 @@ export const Surface = React.forwardRef<HTMLDivElement, SurfaceProps>(
       base: "bg-[var(--surface-1)] shadow-[var(--shadow-sm)]",
       elevated: "bg-[var(--surface-elevated)] shadow-[var(--shadow-md)]",
       interactive:
-        "bg-[var(--surface-1)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)]/50 hover:bg-[var(--surface-muted)] cursor-pointer focus-ring",
+        "bg-[var(--surface-1)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)]/50 hover:bg-[var(--surface-muted)] cursor-pointer focus-ring will-change-transform",
     };
 
     const paddings = {

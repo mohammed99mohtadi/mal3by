@@ -10,7 +10,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   className,
   ...props
 }) => {
-  const baseStyles = "animate-pulse bg-[var(--skeleton)] shrink-0";
+  const baseStyles = "skeleton-shimmer bg-[var(--skeleton)] shrink-0 overflow-hidden";
 
   const variants = {
     text: "h-4 rounded-[var(--radius-sm)] w-full",

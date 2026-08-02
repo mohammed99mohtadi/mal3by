@@ -24,12 +24,12 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-bold text-center border transition-all duration-[var(--duration-fast)] ease-in-out focus-ring cursor-pointer select-none disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:pointer-events-none";
+      "inline-flex items-center justify-center font-bold text-center border transition-all duration-[var(--duration-normal)] ease-[var(--ease-standard)] focus-ring cursor-pointer select-none disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:pointer-events-none active:scale-[.98]";
 
     const variants = {
-      primary: "bg-[var(--brand)] text-[var(--brand-foreground)] border-transparent hover:brightness-105 active:brightness-95",
-      secondary: "bg-[var(--surface-2)] text-[var(--text-primary)] border-[var(--border-strong)] hover:bg-[var(--surface-3)] active:bg-[var(--surface-1)]",
-      outline: "bg-transparent text-[var(--text-primary)] border-[var(--border-strong)] hover:border-[var(--brand)] hover:text-[var(--brand)] active:bg-[var(--surface-2)]",
+      primary: "bg-[var(--brand)] text-[var(--brand-foreground)] border-transparent shadow-[0_8px_24px_rgba(124,252,0,.12)] hover:-translate-y-0.5 hover:brightness-105 hover:shadow-[0_12px_30px_rgba(124,252,0,.18)] active:brightness-95",
+      secondary: "bg-[var(--surface-2)] text-[var(--text-primary)] border-[var(--border-strong)] shadow-[var(--shadow-sm)] hover:-translate-y-0.5 hover:border-[var(--brand)]/35 hover:bg-[var(--surface-3)] active:bg-[var(--surface-1)]",
+      outline: "bg-transparent text-[var(--text-primary)] border-[var(--border-strong)] hover:-translate-y-0.5 hover:border-[var(--brand)] hover:bg-[var(--brand)]/5 hover:text-[var(--brand)] active:bg-[var(--surface-2)]",
       ghost: "bg-transparent text-[var(--text-secondary)] border-transparent hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] active:bg-[var(--surface-3)]",
       danger: "bg-[var(--danger)] text-white border-transparent hover:brightness-110 active:brightness-90",
     };
