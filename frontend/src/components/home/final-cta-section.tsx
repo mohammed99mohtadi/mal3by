@@ -24,15 +24,7 @@ export function FinalCtaSection({ locale }: FinalCtaSectionProps) {
         <p className="max-w-md text-[var(--text-muted)] text-base">
           {t.finalCtaDesc}
         </p>
-        <Link
-          href={`/${l}/courts`}
-          className="brand-button inline-flex items-center gap-2 px-8 py-3.5 text-sm font-bold rounded-[var(--radius-md)] focus-ring"
-        >
-          {t.finalCtaButton}
-          <svg className="size-4 rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
-          </svg>
-        </Link>
+        <div className="flex w-full flex-col justify-center gap-3 sm:w-auto sm:flex-row"><Link href={`/${l}/courts`} className="button-link px-8">{t.finalCtaButton}</Link><Link href={`/${l}/matches`} className="button-link button-link-secondary px-8">{l==="ar"?"استكشف المباريات":"Explore matches"}</Link></div>
       </div>
     </section>
   );

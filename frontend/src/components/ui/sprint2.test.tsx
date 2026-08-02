@@ -148,31 +148,30 @@ describe("Feedback Primitives", () => {
 describe("Homepage Sections (Arabic)", () => {
   it("renders Arabic hero headline", () => {
     render(<HeroSection locale="ar" isLoggedIn={false} />);
-    expect(screen.getByRole("heading", { level: 1 })).toBeDefined();
-    expect(screen.getByText("احجز ملعبك. العب بطريقتك.")).toBeDefined();
+    expect(screen.getByRole("heading", { level: 1, name: "اكتشف ملعبك. اختر وقتك. والعب." })).toBeDefined();
   });
 
   it("renders English hero headline", () => {
     render(<HeroSection locale="en" isLoggedIn={false} />);
     expect(screen.getByRole("heading", { level: 1 })).toBeDefined();
-    expect(screen.getByText("Book your court. Play your way.")).toBeDefined();
+    expect(screen.getByText("Find your court. Choose your time. Play.")).toBeDefined();
   });
 
   it("primary CTA links to courts route", () => {
     render(<HeroSection locale="ar" isLoggedIn={false} />);
-    const ctaLink = screen.getByRole("link", { name: "اكتشف الملاعب" });
+    const ctaLink = document.querySelector('a[href="/ar/courts"]') as HTMLAnchorElement;
     expect(ctaLink.getAttribute("href")).toBe("/ar/courts");
   });
 
-  it("authenticated hero shows My Bookings secondary CTA", () => {
+  it("authenticated hero links to matches", () => {
     render(<HeroSection locale="en" isLoggedIn={true} />);
-    const link = screen.getByRole("link", { name: "My Bookings" });
-    expect(link.getAttribute("href")).toBe("/en/bookings");
+    const link = screen.getByRole("link", { name: "Explore matches" });
+    expect(link.getAttribute("href")).toBe("/en/matches");
   });
 
   it("unauthenticated hero shows Log in secondary CTA", () => {
     render(<HeroSection locale="en" isLoggedIn={false} />);
-    const link = screen.getByRole("link", { name: "Log in to Book" });
+    const link = screen.getByRole("link", { name: "Log in" });
     expect(link.getAttribute("href")).toBe("/en/login");
   });
 
@@ -183,7 +182,7 @@ describe("Homepage Sections (Arabic)", () => {
 
   it("featured courts renders empty state when no courts", () => {
     render(<FeaturedCourtsSection locale="ar" courts={[]} />);
-    expect(screen.getByText("لا توجد ملاعب متاحة حالياً")).toBeDefined();
+    expect(screen.getByText("لا توجد ملاعب مميزة حاليًا")).toBeDefined();
   });
 
   it("featured courts links to real court route", () => {
