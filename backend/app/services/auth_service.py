@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
 from app.models.user import User, UserRole
+from app.models.profile import UserProfile
 from app.schemas.user import UserCreate
 
 
@@ -42,9 +43,15 @@ def register_new_user(db: Session, user_in: UserCreate) -> User:
         role=UserRole.PLAYER,  # Always PLAYER for public registration
         is_admin=False,        # Always False for public registration
     )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    try:
+        db.add(db_user)
+        db.flush()
+        db.add(UserProfile(user_id=db_user.id, display_name=user_in.full_name))
+        db.commit()
+        db.refresh(db_user)
+    except Exception:
+        db.rollback()
+        raise
     return db_user
 
 

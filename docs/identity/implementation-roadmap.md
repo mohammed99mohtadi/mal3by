@@ -85,3 +85,9 @@ Each unit must preserve current API behavior unless its contract change is expli
 ## Why AUTH-2A first
 
 It creates the missing identity boundary without prematurely exposing APIs. It makes later profile, owner application, privacy, and admin work consistent; it also forces an early decision on backfill and transaction safety. Do not begin frontend AUTH-5 first.
+
+## AUTH-2A delivery status
+
+Implemented: UserProfile model/metadata, unique one-to-one relationship, bounded optional fields, atomic registration, existing-user backfill migration, rollback/relationship/constraint/static migration tests, and no API exposure.
+
+Deliberately deferred: User column/role cleanup, phone migration, profile API, public visibility, avatar URL trust checks, and sport/position/skill persistence until a normalized taxonomy exists. AUTH-2B is next and must define separate private/public schemas before exposing data.

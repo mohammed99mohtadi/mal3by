@@ -33,3 +33,9 @@ Role/status, suspension/decision reasons, owner applications, moderation history
 - Close/anonymize accounts instead of cascading historical records.
 - Store explicit retention periods in policy/configuration; apply deletion jobs only after legal review.
 - If IP addresses become necessary for security, truncate/hash where useful, restrict access, and use short retention.
+
+## AUTH-2A profile privacy
+
+UserProfile stores `display_name`, optional `avatar_url`, `preferred_language`, `city`, `area`, and `bio`. Persistence does not make any field public. Email, phone, password hash, role, account status, and authentication metadata are not duplicated. No Profile response schema or endpoint exists yet.
+
+The migration backfill copies only trimmed `full_name` into `display_name`; invalid legacy names shorter than two characters use deterministic `Player {id}` fallback. It does not infer language/location or copy contact data, and optional fields remain null. Production preflight should report any row requiring fallback before applying the migration.

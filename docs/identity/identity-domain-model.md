@@ -72,3 +72,11 @@ Current indexed identity-adjacent FKs are generally good. User list needs indexe
 - `AuditEventResponse`: admin-only, redacted metadata.
 
 Future verification should add a single-use hashed token table with purpose and expiry; never store raw tokens. Email changes should remain pending until verified and should invalidate/reconcile sessions by policy.
+
+## AUTH-2A implementation record
+
+`user_profiles` now provides the user-facing persistence boundary. Fields are `id`, unique `user_id`, trimmed `display_name` (2–100), optional `avatar_url` (500), `preferred_language` (`ar`/`en`), `city` (100), `area` (100), `bio` (1000), and timestamps. Phone, email, role, password data, country, sport, position, and skill are deliberately not duplicated or guessed.
+
+`User.profile` is one-to-one (`uselist=False`) and owns the dependent row with delete-orphan semantics. The foreign key uses `ON DELETE CASCADE`: deleting a Profile cannot delete User or historical data; deleting User removes the dependent Profile. AUTH-2A does not alter the existing deletion policies of bookings, courts, matches, or reviews.
+
+Migration `e4f5a6b7c8d9` backfills exactly one Profile per existing User with `display_name=trim(full_name)`, guarded by `WHERE NOT EXISTS`; invalid legacy names shorter than two trimmed characters receive deterministic `Player {id}` fallback. Registration flushes User, creates Profile, and commits once; any exception rolls both back. Profile APIs, visibility, URL trust validation, and normalized sport-aware preferences remain AUTH-2B work.

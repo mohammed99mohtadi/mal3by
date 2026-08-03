@@ -49,3 +49,9 @@ Any active account may become suspended and later reactivated. Closure requires 
 - Suspending/demoting the only active admin.
 - Demoting an owner while owned courts or unresolved operational obligations lack a transfer policy.
 - Hard-deleting a user and cascading bookings/courts.
+
+## AUTH-2A registration persistence
+
+Registration now atomically creates the active player and exactly one UserProfile. `display_name` comes from the normalized `full_name`; optional profile values and language remain null because registration does not currently provide trustworthy values. User and Profile share one commit, with explicit rollback on any failure. Registration still returns `UserResponse`, creates no automatic session, and accepts no role/profile ownership input.
+
+Existing users receive one deterministic Profile through migration `e4f5a6b7c8d9`. The migration copies no email, phone, role, or credential data. Profile editing/public reads remain unavailable until AUTH-2B.

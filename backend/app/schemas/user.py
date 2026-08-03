@@ -9,6 +9,14 @@ class UserBase(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
     phone_number: str | None = Field(default=None, max_length=20)
 
+    @field_validator("full_name")
+    @classmethod
+    def normalize_full_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Full name must contain at least 2 characters")
+        return normalized
+
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=100)

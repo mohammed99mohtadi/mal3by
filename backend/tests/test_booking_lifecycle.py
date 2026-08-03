@@ -490,4 +490,4 @@ def test_single_alembic_head():
     script = ScriptDirectory.from_config(alembic_cfg)
     heads = script.get_heads()
     assert len(heads) == 1
-    assert heads[0] == "c3d4e5f6a7b8"
+    assert heads[0] == "e4f5a6b7c8d9"

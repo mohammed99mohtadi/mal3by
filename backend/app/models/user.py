@@ -70,6 +70,13 @@ class User(Base):
     )
 
     # Relationships
+    profile = relationship(
+        "UserProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        single_parent=True,
+    )
     courts = relationship("Court", back_populates="owner", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="user", cascade="all, delete-orphan")
     created_pricing_rules = relationship("CourtPricingRule", back_populates="created_by")
