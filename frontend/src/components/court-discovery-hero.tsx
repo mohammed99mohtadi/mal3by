@@ -1,3 +1,19 @@
+import Link from "next/link";
 import { courtDiscoveryCopy } from "@/lib/court-discovery";
 import type { Locale } from "@/lib/copy";
-export function CourtDiscoveryHero({locale,count}:{locale:Locale;count:number}){const t=courtDiscoveryCopy[locale];return <header className="reveal-in relative isolate overflow-hidden rounded-[var(--radius-xl)] border border-[var(--brand)]/20 bg-[radial-gradient(circle_at_15%_15%,rgba(124,252,0,.14),transparent_34%),linear-gradient(135deg,var(--surface-2),var(--surface-1))] px-5 py-8 shadow-[var(--shadow-lg)] sm:px-8 sm:py-11 lg:px-11"><div className="pointer-events-none absolute inset-y-0 end-0 hidden w-[42%] opacity-40 lg:block" aria-hidden="true"><div className="absolute end-10 top-1/2 size-52 -translate-y-1/2 rounded-full border border-[var(--brand)]/30"/><div className="absolute end-20 top-1/2 size-28 -translate-y-1/2 rounded-full border border-[var(--brand)]/20"/><div className="absolute end-0 top-1/2 h-px w-64 bg-gradient-to-l from-[var(--brand)]/50 to-transparent"/></div><div className="relative max-w-2xl"><p className="eyebrow">{t.eyebrow}</p><h1 className="mt-2 text-[clamp(2.35rem,7vw,4.6rem)] font-black leading-[1.05] tracking-[-.035em]">{t.title}</h1><p className="mt-4 max-w-xl text-base leading-8 text-[var(--text-secondary)] sm:text-lg">{t.description}</p><div className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--brand)]/25 bg-[var(--brand)]/10 px-4 text-sm font-bold text-[var(--brand)]" role="status" aria-live="polite"><span className="size-2 rounded-full bg-[var(--brand)] shadow-[0_0_14px_var(--brand)]" aria-hidden="true"/><bdi>{t.results(count)}</bdi></div></div></header>}
+
+export function CourtDiscoveryHero({locale,count,query=""}:{locale:Locale;count:number;query?:string}) {
+  const t=courtDiscoveryCopy[locale],ar=locale==="ar";
+  return <header className="discovery-heading">
+    <div className="flex items-end justify-between gap-4">
+      <div><p className="eyebrow">{t.eyebrow}</p><h1 className="mt-1 text-3xl font-black">{query?(ar?"نتائج البحث":"Search results"):t.title}</h1></div>
+      <Link className="discovery-icon-link focus-ring" href={`/${locale}/courts/map`} aria-label={ar?"عرض الخريطة":"View map"}>⌖</Link>
+    </div>
+    <form role="search" action={`/${locale}/courts`} className="discovery-search mt-5">
+      <label className="sr-only" htmlFor={`court-search-${locale}`}>{t.search}</label>
+      <span aria-hidden="true">⌕</span><input id={`court-search-${locale}`} name="search" defaultValue={query} placeholder={ar?"ابحث عن ملعب أو منطقة…":"Search courts or areas…"} maxLength={100} autoComplete="off"/>
+      <button type="submit" aria-label={ar?"بحث":"Search"}>→</button>
+    </form>
+    <div className="mt-4 flex items-center justify-between gap-3 text-sm"><p className="text-[var(--text-muted)]" role="status" aria-live="polite"><bdi>{t.results(count)}</bdi></p>{query&&<Link className="font-bold text-[var(--brand)]" href={`/${locale}/courts`}>{t.reset}</Link>}</div>
+  </header>;
+}

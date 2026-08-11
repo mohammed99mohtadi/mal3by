@@ -1,49 +1,15 @@
 import { cookies } from "next/headers";
+import { HomeDashboard } from "@/components/home/home-dashboard";
 import { api } from "@/lib/api";
-import { type Locale } from "@/lib/copy";
-import type { Court } from "@/lib/types";
-import { HeroSection } from "@/components/home/hero-section";
-import { FeaturedCourtsSection } from "@/components/home/featured-courts-section";
-import { HowItWorksSection } from "@/components/home/how-it-works-section";
-import { FinalCtaSection } from "@/components/home/final-cta-section";
-import { ProductSections } from "@/components/home/product-sections";
+import type { Locale } from "@/lib/copy";
+import type { Booking,Court,User } from "@/lib/types";
 
-export default async function Home({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
-  const { locale } = await params;
-  const l = (locale === "en" ? "en" : "ar") as Locale;
-
-  const cookieStore = await cookies();
-  const token = cookieStore.get("mal3by_session")?.value;
-  const isLoggedIn = Boolean(token);
-
-  let courts: Court[] = [];
-  let courtsError = false;
-  let isOwner = false;
-  if (token) {
-    try {
-      const user = await api.me(token);
-      isOwner = user.role === "owner" || user.role === "admin";
-    } catch {
-      // Keep the public homepage available if an expired session cannot resolve.
-    }
-  }
-  try {
-    courts = await api.courts(new URLSearchParams({ is_active: "true", limit: "20" }));
-  } catch {
-    courtsError = true;
-  }
-
-  return (
-    <>
-      <HeroSection locale={l} isLoggedIn={isLoggedIn} />
-      <FeaturedCourtsSection locale={l} courts={courts.slice(0, 3)} error={courtsError} />
-      <HowItWorksSection locale={l} />
-      <ProductSections locale={l} courts={courts} isLoggedIn={isLoggedIn} isOwner={isOwner} />
-      <FinalCtaSection locale={l} />
-    </>
-  );
+export default async function Home({params}:{params:Promise<{locale:string}>}) {
+  const {locale}=await params,l=(locale==="en"?"en":"ar")as Locale,token=(await cookies()).get("mal3by_session")?.value;
+  let courts:Court[]=[],user:User|undefined,bookings:Booking[]=[],courtsUnavailable=false,bookingsUnavailable=false;
+  const courtsWork=api.courts(new URLSearchParams({is_active:"true",limit:"20"})).then(value=>{courts=value}).catch(()=>{courtsUnavailable=true});
+  const accountWork=token?Promise.all([api.me(token).then(value=>{user=value}).catch(()=>undefined),api.bookings(token).then(value=>{bookings=value}).catch(()=>{bookingsUnavailable=true})]):Promise.resolve();
+  await Promise.all([courtsWork,accountWork]);
+  const upcoming=bookings.filter(b=>["pending","pending_payment","confirmed"].includes(b.status)).toSorted((a,b)=>Date.parse(a.start_time)-Date.parse(b.start_time));
+  return <HomeDashboard locale={l} courts={courts} userName={user?.full_name} upcoming={upcoming} courtsUnavailable={courtsUnavailable} bookingsUnavailable={bookingsUnavailable}/>;
 }
