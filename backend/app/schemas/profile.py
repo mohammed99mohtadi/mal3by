@@ -18,3 +18,16 @@ class UserProfileCreateInternal(BaseModel):
         if len(normalized) < 2:
             raise ValueError("Display name must contain at least 2 characters")
         return normalized
+
+
+class PreferredLanguageUpdate(BaseModel):
+    preferred_language: str = Field(pattern="^(ar|en)$")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class UserProfileResponse(BaseModel):
+    display_name: str
+    preferred_language: str | None
+
+    model_config = ConfigDict(from_attributes=True)

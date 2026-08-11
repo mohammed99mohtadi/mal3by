@@ -17,6 +17,7 @@ from app.models.user import User, UserRole
 from app.schemas.profile import UserProfileCreateInternal
 from app.schemas.user import UserCreate
 from app.services import auth_service
+from app.core.security import create_access_token
 
 
 def _user(email: str = "profile@example.com") -> User:
@@ -28,6 +29,39 @@ def _user(email: str = "profile@example.com") -> User:
         is_active=True,
         is_admin=False,
     )
+
+
+def _auth_headers(user: User) -> dict[str, str]:
+    return {"Authorization": f"Bearer {create_access_token({'sub': str(user.id)})}"}
+
+
+def test_authenticated_user_can_read_and_set_preferred_language(client, db_session):
+    user = _user("language@example.com")
+    user.profile = UserProfile(display_name="Language User")
+    db_session.add(user)
+    db_session.commit()
+    headers = _auth_headers(user)
+
+    current = client.get("/api/v1/users/me/profile", headers=headers)
+    assert current.status_code == 200
+    assert current.json()["preferred_language"] is None
+
+    updated = client.patch("/api/v1/users/me/profile/language", headers=headers, json={"preferred_language": "ar"})
+    assert updated.status_code == 200
+    assert updated.json()["preferred_language"] == "ar"
+    db_session.refresh(user.profile)
+    assert user.profile.preferred_language == "ar"
+
+
+def test_preferred_language_rejects_invalid_value_and_anonymous_access(client, db_session):
+    user = _user("language-invalid@example.com")
+    user.profile = UserProfile(display_name="Language User")
+    db_session.add(user)
+    db_session.commit()
+    headers = _auth_headers(user)
+
+    assert client.patch("/api/v1/users/me/profile/language", headers=headers, json={"preferred_language": "fr"}).status_code == 422
+    assert client.get("/api/v1/users/me/profile").status_code == 401
 
 
 def test_profile_metadata_and_optional_fields(db_session):

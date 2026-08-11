@@ -1,4 +1,4 @@
-import { ApiError, type Booking, type Court, type MatchParticipant, type OwnerDashboard, type RatingSummary, type Review, type User } from "@/lib/types";
+import { ApiError, type Booking, type Court, type MatchParticipant, type OwnerDashboard, type RatingSummary, type Review, type User, type UserProfile } from "@/lib/types";
 import { isJoinRequestArray, isMatch, isMatchArray, isParticipantArray } from "@/lib/match-validation";
 import { isCourtArray } from "@/lib/court-discovery";
 
@@ -15,7 +15,7 @@ async function matchRequests(token:string,id:string){return validated(request<un
 async function matchParticipants(token:string,id:string):Promise<MatchParticipant[]>{return validated(request<unknown>(`/matches/${encodeURIComponent(id)}/participants`,auth(token)),isParticipantArray,"participant")}
 
 export const api={
-  courts:(query=new URLSearchParams())=>validated(request<unknown>(`/courts${query.size?`?${query}`:""}`),isCourtArray,"court"),court:(id:string)=>request<Court>(`/courts/${id}`,{cache:"no-store"}),reviews:(id:string)=>request<Review[]>(`/courts/${id}/reviews`),summary:(id:string)=>request<RatingSummary>(`/courts/${id}/rating-summary`),slots:(id:string,date:string)=>request<{slots?:{start_time:string;end_time:string}[]}>(`/courts/${id}/available-slots?date=${encodeURIComponent(date)}`),me:(token:string)=>request<User>("/users/me",auth(token)),bookings:(token:string)=>request<Booking[]>("/bookings/me",auth(token)),booking:(token:string,id:string)=>request<Booking>(`/bookings/${id}`,auth(token)),matches,
+  courts:(query=new URLSearchParams())=>validated(request<unknown>(`/courts${query.size?`?${query}`:""}`),isCourtArray,"court"),court:(id:string)=>request<Court>(`/courts/${id}`,{cache:"no-store"}),reviews:(id:string)=>request<Review[]>(`/courts/${id}/reviews`),summary:(id:string)=>request<RatingSummary>(`/courts/${id}/rating-summary`),slots:(id:string,date:string)=>request<{slots?:{start_time:string;end_time:string}[]}>(`/courts/${id}/available-slots?date=${encodeURIComponent(date)}`),me:(token:string)=>request<User>("/users/me",auth(token)),profile:(token:string)=>request<UserProfile>("/users/me/profile",auth(token)),bookings:(token:string)=>request<Booking[]>("/bookings/me",auth(token)),booking:(token:string,id:string)=>request<Booking>(`/bookings/${id}`,auth(token)),matches,
   myCreatedMatches:(token:string)=>validated(request<unknown>(`/matches/me/created?${all}`,auth(token)),isMatchArray,"match"),
   myJoinedMatches:(token:string)=>validated(request<unknown>(`/matches/me/joined?${all}`,auth(token)),isMatchArray,"match"),
   match,myMatchRequests,matchRequests,matchParticipants,ownerDashboard:(token:string)=>request<OwnerDashboard>("/owner/dashboard",auth(token)),

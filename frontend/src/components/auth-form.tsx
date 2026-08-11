@@ -13,7 +13,7 @@ type Field = "full_name" | "email" | "phone_number" | "password" | "password_con
 type Errors = Partial<Record<Field, string>>;
 
 export function AuthForm({ locale, mode, returnTo }: { locale: Locale; mode: "login" | "register"; returnTo?: string | null }) {
-  const t = copy[locale]; const router = useRouter(); const [errors, setErrors] = useState<Errors>({}); const [summary, setSummary] = useState(""); const [loading, setLoading] = useState(false); const [passwordValue, setPasswordValue] = useState(""); const [forgotNotice, setForgotNotice] = useState(false);
+  const t = copy[locale]; const router = useRouter(); const [errors, setErrors] = useState<Errors>({}); const [summary, setSummary] = useState(""); const [loading, setLoading] = useState(false); const [passwordValue, setPasswordValue] = useState("");
   const submitting = useRef(false); const nameRef = useRef<HTMLInputElement>(null); const emailRef = useRef<HTMLInputElement>(null); const phoneRef = useRef<HTMLInputElement>(null); const passwordRef = useRef<HTMLInputElement>(null); const confirmationRef = useRef<HTMLInputElement>(null);
   function focusField(field: Field) { if (field === "full_name") nameRef.current?.focus(); else if (field === "email") emailRef.current?.focus(); else if (field === "phone_number") phoneRef.current?.focus(); else if (field === "password") passwordRef.current?.focus(); else confirmationRef.current?.focus(); }
   function validate(values: Record<string, string>): Errors {
@@ -38,7 +38,7 @@ export function AuthForm({ locale, mode, returnTo }: { locale: Locale; mode: "lo
         const message = mode === "login" && response.status === 401 ? t.invalidCredentials : mode === "register" && response.status === 400 && (detail.includes("email") || detail.includes("phone")) ? t.duplicateAccount : response.status === 422 ? t.invalidDetails : t.authUnexpectedError;
         setSummary(message); return;
       }
-      router.push(mode === "login" ? safeReturnPath(returnTo ?? null, locale) : `/${locale}/login`); router.refresh();
+      const destination = safeReturnPath(returnTo ?? null, locale); router.push(mode === "login" ? `/${locale}/language?returnTo=${encodeURIComponent(destination)}` : `/${locale}/login`); router.refresh();
     } catch { setSummary(t.authNetworkError); }
     finally { submitting.current = false; setLoading(false); }
   }
@@ -52,9 +52,8 @@ export function AuthForm({ locale, mode, returnTo }: { locale: Locale; mode: "lo
     {mode === "register" && <PasswordField ref={confirmationRef} locale={locale} required name="password_confirmation" label={t.passwordConfirmLabel} autoComplete="new-password" error={errors.password_confirmation} />}
     {mode === "login" && <div className="auth-form-options">
       <label className="auth-remember"><input type="checkbox" name="remember_me" defaultChecked /><span aria-hidden="true" />{t.rememberMe}</label>
-      <button type="button" className="auth-forgot focus-ring" aria-expanded={forgotNotice} onClick={() => setForgotNotice((value) => !value)}>{t.forgotPassword}</button>
+      <a className="auth-forgot focus-ring" href={`/${locale}/forgot-password`}>{t.forgotPassword}</a>
     </div>}
-    {mode === "login" && forgotNotice && <p className="auth-forgot-notice" role="status">{t.forgotPasswordUnavailable}</p>}
     <Button type="submit" fullWidth size="lg" isLoading={loading}>{loading ? t.authSubmitting : mode === "login" ? t.login : t.register}</Button>
   </form>;
 }

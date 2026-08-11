@@ -1,14 +1,20 @@
+import Image from "next/image";
 import Link from "next/link";
+import mal3abyLogo from "../../public/brand/mal3aby-logo.png";
 import type { Locale } from "@/lib/copy";
 
 export function AuthBrand({ locale }: { locale: Locale }) {
   return (
     <Link className="auth-brand focus-ring" href={`/${locale}`} aria-label="MAL3ABY">
-      <span className="auth-brand-mark" aria-hidden="true">
-        <span>M</span><i>3</i>
-      </span>
-      <span className="auth-brand-name">MAL<span>3</span>ABY</span>
-      <span className="auth-brand-tagline" aria-hidden="true">BOOK <i /> PLAY <i /> ENJOY</span>
+      <Image
+        className="auth-brand-image"
+        src={mal3abyLogo}
+        alt="MAL3ABY"
+        width={1536}
+        height={1024}
+        sizes="(max-width: 639px) 176px, 200px"
+        preload
+      />
     </Link>
   );
 }

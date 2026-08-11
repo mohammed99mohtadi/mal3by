@@ -2,6 +2,7 @@ export type Court = { id:number; sport_id:number; name_en:string; name_ar:string
 export type Review = { id:number; rating:number; comment?:string|null; is_verified_booking:boolean; created_at:string; reviewer:{id:number;full_name:string}; owner_response?:{response_text:string}|null };
 export type RatingSummary = { average_rating:string; total_reviews:number; verified_reviews:number; rating_distribution:{one:number;two:number;three:number;four:number;five:number} };
 export type User = { id:number; full_name:string; email:string; phone_number?:string|null; role:string; is_active:boolean; is_admin?:boolean; created_at?:string };
+export type UserProfile = { display_name:string; preferred_language:"ar"|"en"|null };
 export type BookingStatus="pending"|"pending_payment"|"confirmed"|"cancelled"|"expired"|"completed"|"rejected"|"refunded";
 export type Booking={id:number;court_id:number;start_time:string;end_time:string;total_price:string;currency:string;status:BookingStatus;hold_expires_at?:string|null;confirmed_at?:string|null;expired_at?:string|null;completed_at?:string|null;refunded_at?:string|null;status_updated_at?:string|null;cancellation_reason?:string|null;cancelled_at?:string|null;created_at:string;court?:Court|null};
 export type MatchStatus="open"|"full"|"cancelled"|"completed";

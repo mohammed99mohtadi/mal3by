@@ -21,11 +21,9 @@ describe("AuthForm V2", () => {
     expect(screen.getByRole("checkbox", { name: "Remember me" })).toBeChecked();
   });
 
-  it("provides an honest forgot-password entry without making a request", () => {
-    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock); render(<AuthForm locale="en" mode="login" />);
-    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Password recovery is not available yet");
-    expect(fetchMock).not.toHaveBeenCalled();
+  it("links to the honest forgot-password screen", () => {
+    render(<AuthForm locale="en" mode="login" />);
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute("href", "/en/forgot-password");
   });
 
   it("renders only supported registration payload fields plus local confirmation", () => {
@@ -77,7 +75,7 @@ describe("AuthForm V2", () => {
 
   it("uses safe return path after login", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(true, 200))); render(<AuthForm locale="en" mode="login" returnTo="/en/bookings/4" />); fillLogin(); fireEvent.submit(input("password").closest("form")!);
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/en/bookings/4"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/en/language?returnTo=%2Fen%2Fbookings%2F4"));
   });
 
   it("sends the optional remember preference without changing credentials", async () => {
@@ -89,7 +87,7 @@ describe("AuthForm V2", () => {
 
   it("rejects unsafe return path after login", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(true, 200))); render(<AuthForm locale="en" mode="login" returnTo="https://evil.test" />); fillLogin(); fireEvent.submit(input("password").closest("form")!);
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/en/profile"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/en/language?returnTo=%2Fen%2Fprofile"));
   });
 
   it("renders natural Arabic form copy", () => {
