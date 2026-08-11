@@ -17,6 +17,7 @@ describe("F2 navigation and layout", () => {
     expect(screen.getByRole("link", { name: "Log in" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Create account" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Open account menu")).toBeNull();
+    expect(screen.queryByRole("link", { name: /arabic|english|العربية/i })).toBeNull();
   });
 
   it("renders authenticated desktop navigation and user menu", () => {
@@ -82,5 +83,6 @@ describe("F2 navigation and layout", () => {
     expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/en/privacy");
     expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/en/terms");
     expect(screen.queryByRole("link", { name: /social/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /arabic|english|العربية/i })).toBeNull();
   });
 });

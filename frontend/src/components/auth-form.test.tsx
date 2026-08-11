@@ -18,6 +18,14 @@ describe("AuthForm V2", () => {
     expect(screen.getByLabelText("Email")).toHaveAttribute("autocomplete", "email");
     expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "current-password");
     expect(input("phone_number")).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Remember me" })).toBeChecked();
+  });
+
+  it("provides an honest forgot-password entry without making a request", () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock); render(<AuthForm locale="en" mode="login" />);
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Password recovery is not available yet");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("renders only supported registration payload fields plus local confirmation", () => {
@@ -70,6 +78,13 @@ describe("AuthForm V2", () => {
   it("uses safe return path after login", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(true, 200))); render(<AuthForm locale="en" mode="login" returnTo="/en/bookings/4" />); fillLogin(); fireEvent.submit(input("password").closest("form")!);
     await waitFor(() => expect(push).toHaveBeenCalledWith("/en/bookings/4"));
+  });
+
+  it("sends the optional remember preference without changing credentials", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(true, 200)); vi.stubGlobal("fetch", fetchMock); render(<AuthForm locale="en" mode="login" />); fillLogin();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Remember me" })); fireEvent.submit(input("password").closest("form")!);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ email: "player@example.com", password: "password1", remember_me: false });
   });
 
   it("rejects unsafe return path after login", async () => {
