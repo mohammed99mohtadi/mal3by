@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAL3ABY Accessibility"
+  short_description: "Apply bilingual accessibility rules"
+  default_prompt: "Use $mal3aby-accessibility to implement or audit accessible Arabic and English MAL3ABY UI."

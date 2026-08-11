@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAL3ABY Frontend"
+  short_description: "Work safely in the MAL3ABY frontend"
+  default_prompt: "Use $mal3aby-frontend to implement a MAL3ABY Next.js frontend change while preserving contracts."

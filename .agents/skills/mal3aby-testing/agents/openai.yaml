@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAL3ABY Testing"
+  short_description: "Verify MAL3ABY changes thoroughly"
+  default_prompt: "Use $mal3aby-testing to define and run the appropriate MAL3ABY verification matrix."

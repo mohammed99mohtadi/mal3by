@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAL3ABY Mobile UX"
+  short_description: "Build mobile-first MAL3ABY experiences"
+  default_prompt: "Use $mal3aby-mobile-ux to implement or review a responsive MAL3ABY mobile experience."

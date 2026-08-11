@@ -4,4 +4,6 @@ warning: in the working copy of 'backend/tests/test_pricing.py', LF will be repl
 warning: in the working copy of 'docs/audits/booking-security-hardening-audit.md', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'docs/audits/booking-security-remediation-roadmap.md', LF will be replaced by CRLF the next time Git touches it
 .vscode/
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**

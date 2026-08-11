@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAL3ABY Backend"
+  short_description: "Work safely in the MAL3ABY FastAPI API"
+  default_prompt: "Use $mal3aby-backend to implement a layered MAL3ABY FastAPI change."

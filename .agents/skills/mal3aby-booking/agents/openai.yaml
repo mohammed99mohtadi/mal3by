@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAL3ABY Booking"
+  short_description: "Preserve MAL3ABY booking invariants"
+  default_prompt: "Use $mal3aby-booking to change or review MAL3ABY booking, availability, or pricing behavior."

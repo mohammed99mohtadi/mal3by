@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAL3ABY Database"
+  short_description: "Evolve MAL3ABY data safely"
+  default_prompt: "Use $mal3aby-database to plan or implement a safe MAL3ABY schema or persistence change."

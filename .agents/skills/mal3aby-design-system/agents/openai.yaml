@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAL3ABY Design System"
+  short_description: "Apply MAL3ABY visual identity rules"
+  default_prompt: "Use $mal3aby-design-system to design or review a MAL3ABY interface using the project tokens and components."
